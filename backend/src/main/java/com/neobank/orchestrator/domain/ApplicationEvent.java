@@ -10,7 +10,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 /**
- * One line in the append-only log — the system of record for attempt-01.
+ * One line in the append-only log — the system of record for the whole journey.
  *
  * <p><b>Rows are inserted and never updated or deleted.</b> Everything the board and the
  * service summary display is derived from this table, so "what actually happened" is always

@@ -16,8 +16,11 @@ import org.springframework.stereotype.Component;
  * <p>Seeded with 42 (the course convention) so a run is reproducible: the same sequence of
  * applications, with the same applicants and products, every time.</p>
  *
- * <p>No service in attempt-01 reads these fields to decide anything. They exist so the
- * payload, the log lines and the event log look like the real system.</p>
+ * <p>The skeleton modules read none of these fields to decide anything — they exist so the
+ * payload, the log lines and the event log look like the real system from day one. As teams
+ * write real rules, this is the data those rules run against: income, age, country, product
+ * and document all vary, which is what makes one rule produce outcomes that differ AND can
+ * be explained.</p>
  */
 @Component
 public class ApplicationFactory {
