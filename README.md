@@ -77,6 +77,52 @@ UI_PORT=3100 API_PORT=9100 MYSQL_PORT=3426 docker compose up --build
 
 ## Running in AWS
 
+### The two environments
+
+| | Board | Every module |
+|---|---|---|
+| **dev** | **http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/** | `…/neo-01/` … `…/neo-10/` |
+| **prod** | **http://neobank-prod-294820685.ap-southeast-1.elb.amazonaws.com/** | same paths |
+
+The orchestrator owns `/`, so the board is the bare host. Each module hangs off its own
+prefix — swap `neo-01` for your number, and append `/health` or `/info` to hit its API:
+
+```
+http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-04/         Team 04's UI
+http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-04/health   is it up?
+http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-04/info     who it says it is
+```
+
+<details>
+<summary>All ten module UIs on dev</summary>
+
+[01 Application Verification](http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-01/) ·
+[02 Customer Policy](http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-02/) ·
+[03 Identity Verification (KYC)](http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-03/) ·
+[04 Fraud & AML Screening](http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-04/) ·
+[05 Credit Decisioning](http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-05/) ·
+[06 Agreement Management](http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-06/) ·
+[07 Card Account Setup](http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-07/) ·
+[08 Card Issuing](http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-08/) ·
+[09 Customer Support](http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-09/) ·
+[10 Portfolio & Regulatory Analytics](http://neobank-dev-571740187.ap-southeast-1.elb.amazonaws.com/neo-10/)
+
+</details>
+
+**Both are plain HTTP.** There is no certificate and no DNS name — the hostnames above are
+the ALBs' own, and they change if an ALB is ever replaced. The current values always come
+from SSM, which is also where the pipeline reads them:
+
+```bash
+aws ssm get-parameter --name /neobank/dev/alb-dns  --query Parameter.Value --output text
+aws ssm get-parameter --name /neobank/prod/alb-dns --query Parameter.Value --output text
+```
+
+> **dev moves on every merge to `main`. prod does not.** prod only ever runs an image dev has
+> already proven, shipped by a manual `promote` that a human approves — so a 404 there simply
+> means that module has not been promoted yet, not that it is broken. If both environments
+> are parked (`Power` workflow), both hosts answer 503 until they are started again.
+
 **Every repo deploys itself.** There is no central deploy job: each of the eleven pushes to
 its own `main`, publishes its own images to ghcr.io, and converges its own CloudFormation
 service stack (`neobank-<env>-<name>`) using its own OIDC role — which is scoped so it
