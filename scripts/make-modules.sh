@@ -128,13 +128,19 @@ pairs_for() {  # <nn> <domain> <name> <mocked> <outfile>
 
 generate() {  # <dest> <nn> <domain> <name> <mocked>
   local dest="$1" nn="$2" domain="$3" name="$4" mocked="$5"
-  rm -rf "$dest"
   mkdir -p "$dest"
-  # -a but WITHOUT .git: a module is its own repository. Trailing slash on the source and
-  # `--exclude .git` with no slash, so the submodule POINTER FILE is excluded too — an
-  # exclude written as `.git/` matches only directories and would copy a submodule's
-  # `.git` file straight through.
-  rsync -a --exclude '.git' --exclude '.DS_Store' --exclude 'target' \
+  # --delete, NOT `rm -rf $dest`. A regenerate must replace the CONTENT while leaving the
+  # module's own `.git` alone: each of these directories is a separate git repository with
+  # its own history and remote. `rm -rf` deleted nine repositories' git data in one command
+  # here — recoverable only because everything had been pushed, which is not a property to
+  # rely on twice.
+  #
+  # rsync does not delete files it was told to exclude (that needs --delete-excluded), so
+  # `.git` is protected by the same line that keeps it from being copied.
+  #
+  # `--exclude .git` has no trailing slash on purpose: `.git/` matches only directories, and
+  # a submodule's `.git` is a FILE pointing into the superproject.
+  rsync -a --delete --exclude '.git' --exclude '.DS_Store' --exclude 'target' \
         --exclude 'node_modules' --exclude 'dist' "$TEMPLATE/" "$dest/"
   local pairs
   pairs="$(mktemp)"

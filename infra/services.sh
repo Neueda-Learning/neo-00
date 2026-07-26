@@ -70,7 +70,20 @@ for env in "${ENVS[@]}"; do
         echo "   $s -> $count"
       done
       echo "   waiting for $env to settle..."
-      aws ecs wait services-stable --region "$REGION" --cluster "$cluster" --services "${services[@]}"
+      # `wait services-stable` takes AT MOST 10 services per call. With eleven (orchestrator
+      # + ten modules) a single call fails with "service names can have at most 10 items"
+      # AFTER the scaling has already been applied — so the environment is fine and the
+      # script reports failure, which is the most confusing pairing available. Batch it.
+      batch=()
+      for s in "${services[@]}"; do
+        batch+=("$s")
+        if [ "${#batch[@]}" -eq 10 ]; then
+          aws ecs wait services-stable --region "$REGION" --cluster "$cluster" --services "${batch[@]}"
+          batch=()
+        fi
+      done
+      [ "${#batch[@]}" -gt 0 ] && \
+        aws ecs wait services-stable --region "$REGION" --cluster "$cluster" --services "${batch[@]}"
       echo "   $env is $past"
       ;;
     *)

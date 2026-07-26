@@ -6,6 +6,15 @@ spring:
     url: ${DB_URL:jdbc:mysql://localhost:3326/neo_00?createDatabaseIfNotExist=true}
     username: ${DB_USERNAME:appuser}
     password: ${DB_PASSWORD:apppass}
+    hikari:
+      # ELEVEN SERVICES SHARE ONE DATABASE — see the same block in a module's application.yml.
+      # HikariCP defaults to 10 per service; eleven of those is 110 against the ~85 a
+      # db.t4g.micro allows, and the services that lose the race die in Liquibase with
+      # "Too many connections". The orchestrator gets a slightly larger pool than a module
+      # because it writes an event for every dispatch, ack and answer of every journey —
+      # ten times the traffic of any one module.
+      maximum-pool-size: ${DB_POOL_SIZE:8}
+      minimum-idle: 2
 
   jpa:
     hibernate:
