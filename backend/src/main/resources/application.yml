@@ -1,0 +1,83 @@
+spring:
+  application:
+    name: neo-00
+
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3326/neo_00?createDatabaseIfNotExist=true}
+    username: ${DB_USERNAME:appuser}
+    password: ${DB_PASSWORD:apppass}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+orchestrator:
+  # The command label sent to every service.
+  command: process-application
+  # How long to wait after a callback before dispatching the next service. This is the
+  # visible rhythm of the board.
+  step-delay: ${STEP_DELAY:1s}
+  # A service that has not called back within this is given up on: the step is logged as
+  # TIMEOUT and the application ends FAILED. Without it one dropped callback wedges a
+  # journey forever.
+  callback-timeout: ${CALLBACK_TIMEOUT:30s}
+  sweep-interval-ms: ${SWEEP_INTERVAL_MS:5000}
+
+  generator:
+    # OFF at boot on purpose: the orchestrator dispatches to services that call back to
+    # the orchestrator, so a stack coming up all at once would fire at containers that
+    # are not listening yet. Turn it on from the UI.
+    enabled: ${GENERATOR_ENABLED:false}
+    interval-ms: ${GENERATOR_INTERVAL_MS:5000}
+    tick-ms: 1000
+    # Seed 42 — course convention. Same applicants and products every run.
+    seed: ${GENERATOR_SEED:42}
+
+  # THE JOURNEY. Order is the sequence a customer's application travels through; the names
+  # are the module topics from the capstone spec, and each module is one student team.
+  #
+  # serviceId is what a module sends on its status update — note it has no hyphen, unlike
+  # the repository name (neo-01 → neo01). That mismatch is intentional.
+  #
+  # Base URLs default to localhost:900N, which is what you want when the orchestrator runs
+  # in your IDE and the modules run in compose. In the system stack and on AWS every one of
+  # them is overridden by environment (compose service names / Cloud Map DNS).
+  #
+  # Steps 9 and 10 are the two ANALYTICAL modules. In the written spec they observe the
+  # journey rather than sit in it; here they are dispatched like every other step, so that
+  # all ten teams exercise the same contract and every module can be proven live. When their
+  # briefs land, they come out of this list and grow a journey read API instead.
+  services:
+    - { step: 1,  serviceId: neo01, name: "Application Verification",          base-url: "${SERVICE_01_URL:http://localhost:9001}" }
+    - { step: 2,  serviceId: neo02, name: "Customer Policy",                   base-url: "${SERVICE_02_URL:http://localhost:9002}" }
+    - { step: 3,  serviceId: neo03, name: "Identity Verification (KYC)",       base-url: "${SERVICE_03_URL:http://localhost:9003}" }
+    - { step: 4,  serviceId: neo04, name: "Fraud & AML Screening",             base-url: "${SERVICE_04_URL:http://localhost:9004}" }
+    - { step: 5,  serviceId: neo05, name: "Credit Decisioning",                base-url: "${SERVICE_05_URL:http://localhost:9005}" }
+    - { step: 6,  serviceId: neo06, name: "Agreement Management",              base-url: "${SERVICE_06_URL:http://localhost:9006}" }
+    - { step: 7,  serviceId: neo07, name: "Card Account Setup",                base-url: "${SERVICE_07_URL:http://localhost:9007}" }
+    - { step: 8,  serviceId: neo08, name: "Card Issuing",                      base-url: "${SERVICE_08_URL:http://localhost:9008}" }
+    - { step: 9,  serviceId: neo09, name: "Customer Support",                  base-url: "${SERVICE_09_URL:http://localhost:9009}" }
+    - { step: 10, serviceId: neo10, name: "Portfolio & Regulatory Analytics",  base-url: "${SERVICE_10_URL:http://localhost:9010}" }
+
+cors:
+  allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+
+logging:
+  level:
+    liquibase: INFO

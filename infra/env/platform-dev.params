@@ -1,0 +1,10 @@
+# The DEV platform stack (network, RDS, cluster, ALB, shared IAM, OIDC provider). Deployed
+# once from a laptop with admin — NOT by any repo's pipeline. dev owns the account-global
+# OIDC provider. GhcrSecretArn is the hand-created ghcr.io pull secret (see infra/README.md).
+EnvironmentName=dev
+AllowedCidr=0.0.0.0/0
+DbInstanceClass=db.t4g.micro
+DbAllocatedStorage=20
+CreateOidcProvider=Yes
+ExistingOidcProviderArn=
+GhcrSecretArn=arn:aws:secretsmanager:ap-southeast-1:192404871113:secret:neobank/ghcr-IPETv3

@@ -1,0 +1,30 @@
+[submodule "neo-01"]
+	path = neo-01
+	url = https://github.com/gjavolce/neo-01.git
+[submodule "neo-02"]
+	path = neo-02
+	url = https://github.com/gjavolce/neo-02.git
+[submodule "neo-03"]
+	path = neo-03
+	url = https://github.com/gjavolce/neo-03.git
+[submodule "neo-04"]
+	path = neo-04
+	url = https://github.com/gjavolce/neo-04.git
+[submodule "neo-05"]
+	path = neo-05
+	url = https://github.com/gjavolce/neo-05.git
+[submodule "neo-06"]
+	path = neo-06
+	url = https://github.com/gjavolce/neo-06.git
+[submodule "neo-07"]
+	path = neo-07
+	url = https://github.com/gjavolce/neo-07.git
+[submodule "neo-08"]
+	path = neo-08
+	url = https://github.com/gjavolce/neo-08.git
+[submodule "neo-09"]
+	path = neo-09
+	url = https://github.com/gjavolce/neo-09.git
+[submodule "neo-10"]
+	path = neo-10
+	url = https://github.com/gjavolce/neo-10.git

@@ -1,0 +1,206 @@
+/* App-specific rules only.
+ *
+ * Everything visual — colour, type, spacing, radii, states, focus — comes from the
+ * design system's custom properties. This sheet adds no new values: not one hex, not
+ * one font, not one bare pixel outside a token. It holds the three shapes the system
+ * has no component for, because they are marketing surfaces rather than operator ones.
+ * The two panel shapes below take the same --ds-surface-* hooks a Card does, so they
+ * follow the theme rather than needing a rewrite when it changes:
+ *
+ *   .landing-*   the two doors on the entry screen
+ *   .journey-*   the customer's three-step progress tracker
+ *   .product-*   the credit-card face and its marketing panel
+ *
+ * If something here grows into a pattern three screens need, it belongs in the design
+ * system (design-system/DESIGN.md § "When the system does not have what you need").
+ */
+
+/* ── Landing ─────────────────────────────────────────────────────────────── */
+.landing {
+  max-width: 980px;
+  margin: var(--ds-space-10) auto;
+  padding: 0 var(--ds-space-6);
+}
+
+.landing__head {
+  text-align: center;
+  margin-bottom: var(--ds-space-8);
+}
+
+.landing__title {
+  font-family: var(--ds-font-display, inherit);
+  font-size: var(--ds-text-3xl);
+  font-weight: var(--ds-display-weight);
+  letter-spacing: var(--ds-tracking-tight);
+  line-height: var(--ds-leading-tight);
+}
+
+.landing__sub {
+  margin-top: var(--ds-space-2);
+  color: var(--ds-color-text-muted);
+  font-size: var(--ds-text-lg);
+}
+
+.landing__choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--ds-space-5);
+}
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-7);
+  /* Same four surface hooks a Card uses, so the doors are glass under a glass
+   * theme and a plain panel under a flat one — without this they render as
+   * transparent rectangles the moment the canvas stops being opaque. */
+  border: var(--ds-surface-border, var(--ds-border-width) solid var(--ds-color-border));
+  border-radius: var(--ds-radius-xl);
+  background: var(--ds-surface-fill, var(--ds-color-surface));
+  -webkit-backdrop-filter: var(--ds-surface-backdrop, none);
+  backdrop-filter: var(--ds-surface-backdrop, none);
+  box-shadow: var(--ds-surface-shadow, none);
+  text-align: left;
+  transition: border-color var(--ds-transition), background var(--ds-transition);
+}
+
+.choice:hover {
+  border-color: var(--ds-color-accent);
+}
+
+.choice__kicker {
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-semibold);
+  letter-spacing: var(--ds-tracking-label);
+  text-transform: uppercase;
+  color: var(--ds-color-accent-text);
+}
+
+.choice__title {
+  font-family: var(--ds-font-display, inherit);
+  font-size: var(--ds-text-xl);
+  font-weight: var(--ds-display-weight);
+}
+
+.choice__sub {
+  color: var(--ds-color-text-muted);
+  line-height: var(--ds-leading-body);
+}
+
+.choice__cta {
+  margin-top: var(--ds-space-3);
+  color: var(--ds-color-accent-text);
+  font-weight: var(--ds-weight-semibold);
+}
+
+/* ── The customer's progress tracker ─────────────────────────────────────── */
+.journey-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-5);
+  flex-wrap: wrap;
+}
+
+.journey-progress__step {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  color: var(--ds-color-text-muted);
+  font-size: var(--ds-text-md);
+}
+
+.journey-progress__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: var(--ds-border-width) solid var(--ds-color-border);
+  border-radius: var(--ds-radius-pill);
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.journey-progress__step--done .journey-progress__num {
+  background: var(--ds-color-accent-soft);
+  border-color: var(--ds-color-accent);
+  color: var(--ds-color-accent-text);
+}
+
+.journey-progress__step--current {
+  color: var(--ds-color-text);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.journey-progress__step--current .journey-progress__num {
+  background: var(--ds-color-accent);
+  border-color: var(--ds-color-accent);
+  color: var(--ds-color-accent-ink);
+}
+
+/* ── The product card ────────────────────────────────────────────────────── */
+.product-face {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  aspect-ratio: 8 / 5;
+  /* Keeps it card-shaped in a narrow column and banner-shaped in a wide one,
+   * instead of growing into a wall as the grid column widens. */
+  max-height: 240px;
+  padding: var(--ds-space-5);
+  border-radius: var(--ds-radius-xl);
+  background: var(--product-face-bg, var(--ds-color-nav));
+  color: var(--ds-color-nav-ink);
+}
+
+.product-face--premium {
+  --product-face-bg: var(--ds-color-ink-solid, var(--ds-color-nav));
+}
+
+.product-face--platinum {
+  --product-face-bg: var(--ds-color-accent-press);
+}
+
+.product-face__brand {
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-bold);
+  letter-spacing: var(--ds-tracking-label);
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.product-face__chip {
+  width: 38px;
+  height: 27px;
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-color-nav-ink);
+  opacity: 0.28;
+}
+
+.product-face__name {
+  font-family: var(--ds-font-display, inherit);
+  font-size: var(--ds-text-xl);
+  font-weight: var(--ds-display-weight);
+}
+
+.product-features {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+  margin: var(--ds-space-4) 0;
+  color: var(--ds-color-text-secondary);
+}
+
+.product-features li {
+  display: flex;
+  gap: var(--ds-space-2);
+}
+
+.product-features li::before {
+  content: '+';
+  color: var(--ds-color-accent-text);
+  font-weight: var(--ds-weight-bold);
+}

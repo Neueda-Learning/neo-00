@@ -1,0 +1,10 @@
+# The PROD platform stack. Deployed once from a laptop. prod does NOT own the OIDC provider
+# (account-global, one owner) — it references dev's, whose ARN is deterministic for this
+# account + issuer, so it is filled in already.
+EnvironmentName=prod
+AllowedCidr=0.0.0.0/0
+DbInstanceClass=db.t4g.micro
+DbAllocatedStorage=20
+CreateOidcProvider=No
+ExistingOidcProviderArn=arn:aws:iam::192404871113:oidc-provider/token.actions.githubusercontent.com
+GhcrSecretArn=arn:aws:secretsmanager:ap-southeast-1:192404871113:secret:neobank/ghcr-IPETv3

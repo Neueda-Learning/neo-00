@@ -1,0 +1,128 @@
+# The journey and its append-only log.
+#
+# application_event is INSERT-ONLY: every dispatch, ack, callback, timeout and journey
+# transition is a new row, and nothing ever updates or deletes one. Both front-end screens
+# are derived from it, so "what actually happened" is always reconstructible.
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-application
+      author: neo-00
+      changes:
+        - createTable:
+            tableName: application
+            columns:
+              - column:
+                  name: id
+                  type: VARCHAR(40)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: correlation_id
+                  type: VARCHAR(64)
+              - column:
+                  name: applicant_name
+                  type: VARCHAR(120)
+              - column:
+                  name: product_code
+                  type: VARCHAR(40)
+              - column:
+                  name: requested_limit
+                  type: INT
+              - column:
+                  name: channel
+                  type: VARCHAR(24)
+              - column:
+                  # The whole application object as sent (~1.2 KB of JSON). An explicit
+                  # VARCHAR, not TEXT: H2 and MySQL render TEXT differently and
+                  # ddl-auto=validate then refuses to start on one of them.
+                  name: payload_json
+                  type: VARCHAR(8000)
+              - column:
+                  name: current_step
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: overall_status
+                  type: VARCHAR(24)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: application
+            indexName: idx_application_status
+            columns:
+              - column:
+                  name: overall_status
+
+        - createTable:
+            tableName: application_event
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: application_id
+                  type: VARCHAR(40)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: step_index
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: service_id
+                  type: VARCHAR(24)
+              - column:
+                  name: event_type
+                  type: VARCHAR(24)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(24)
+              - column:
+                  name: comment
+                  type: VARCHAR(500)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: application_event
+            indexName: idx_event_application
+            columns:
+              - column:
+                  name: application_id
+        - createIndex:
+            tableName: application_event
+            indexName: idx_event_service
+            columns:
+              - column:
+                  name: service_id
+      rollback:
+        - dropTable:
+            tableName: application_event
+        - dropTable:
+            tableName: application

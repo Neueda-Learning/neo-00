@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:orchestratortest;MODE=MySQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+orchestrator:
+  # No waiting around in tests: dispatch the next service as soon as the callback lands.
+  step-delay: 0s
+  # Far enough out that the scheduled sweeper never fires mid-test — the timeout path is
+  # tested directly by calling sweepTimeouts(Duration.ZERO).
+  callback-timeout: 3600s
+  generator:
+    enabled: false

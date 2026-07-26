@@ -1,0 +1,51 @@
+# neo-00's OWN service (the orchestrator), on dev. Per-repo values only — the pipeline
+# adds EnvironmentName, BackendImage, FrontendImage (pinned @sha256), DbEndpoint, AlbDnsName.
+# Platform-wide config lives in platform-dev.params (ops-only).
+ServiceName=orchestrator
+Role=orchestrator
+# Empty: the orchestrator owns the ALB root, so the board is at http://<alb>/ and every
+# module hangs off a prefix beneath it.
+PathPrefix=
+# Highest priority: the orchestrator's /* catch-all must be checked AFTER every module rule,
+# or it answers /neo-04/ too and no module UI is ever reachable.
+ListenerRulePriority=50000
+DbName=neo_00
+#
+# ---- THE JOURNEY on dev: ten slots, one per team ----
+#
+# This is the list, and the only place to read it. Base URLs resolve over Cloud Map inside
+# the VPC (<ServiceName>.neobank-dev.local) — the same name each module's own stack registers
+# itself under. So a module that has never been deployed simply does not answer: its step
+# times out and the others are unaffected.
+#
+# To take a slot out of dev, blank its three lines. To re-order the journey, move the blocks.
+Step1ServiceId=neo01
+Step1Name=Application Verification
+Step1BaseUrl=http://neo-01.neobank-dev.local:8080
+Step2ServiceId=neo02
+Step2Name=Customer Policy
+Step2BaseUrl=http://neo-02.neobank-dev.local:8080
+Step3ServiceId=neo03
+Step3Name=Identity Verification (KYC)
+Step3BaseUrl=http://neo-03.neobank-dev.local:8080
+Step4ServiceId=neo04
+Step4Name=Fraud & AML Screening
+Step4BaseUrl=http://neo-04.neobank-dev.local:8080
+Step5ServiceId=neo05
+Step5Name=Credit Decisioning
+Step5BaseUrl=http://neo-05.neobank-dev.local:8080
+Step6ServiceId=neo06
+Step6Name=Agreement Management
+Step6BaseUrl=http://neo-06.neobank-dev.local:8080
+Step7ServiceId=neo07
+Step7Name=Card Account Setup
+Step7BaseUrl=http://neo-07.neobank-dev.local:8080
+Step8ServiceId=neo08
+Step8Name=Card Issuing
+Step8BaseUrl=http://neo-08.neobank-dev.local:8080
+Step9ServiceId=neo09
+Step9Name=Customer Support
+Step9BaseUrl=http://neo-09.neobank-dev.local:8080
+Step10ServiceId=neo10
+Step10Name=Portfolio & Regulatory Analytics
+Step10BaseUrl=http://neo-10.neobank-dev.local:8080

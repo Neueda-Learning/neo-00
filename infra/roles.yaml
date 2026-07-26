@@ -1,0 +1,207 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# Fn::ForEach needs this. It also means every deploy of this stack must pass
+# --capabilities CAPABILITY_AUTO_EXPAND (alongside CAPABILITY_NAMED_IAM) — a transform is a
+# macro, and CloudFormation will not expand one without being told. See infra/README.md.
+Transform: AWS::LanguageExtensions
+
+Description: >-
+  neobank per-repo DEPLOY ROLES: one IAM role per repo, assumed by that repo's GitHub Actions
+  via OIDC and scoped so it can deploy ONLY its own service stack. Separate from platform.yaml
+  so adding a team is a tiny IAM redeploy and never a VPC/RDS/ALB change.
+
+  A SHARED role is deliberately rejected: with eleven repos it would let any team deploy over
+  another team's stack, which is the isolation this whole split exists to create. Eleven roles
+  is the point, not an accident of copy-paste.
+
+  Deployed once per environment from a laptop with admin, AFTER platform.yaml.
+
+  ADDING A TEAM = one line in the Repos mapping below (the numeric repo id comes from
+  `gh api repos/gjavolce/<repo> --jq .id`) plus its slot in the two ForEach lists, then
+  redeploy. This file used to carry one 60-line copy-pasted block per repo and predicted, in
+  its own comment, that at ten teams it should become a loop. This is that loop.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    AllowedValues: [dev, prod]
+  OidcProviderArn:
+    Type: String
+    Description: >-
+      The account-global provider ARN — platform.yaml's OidcProviderArn output. Trusted as a
+      constant string (it is stable for an account+issuer), so these roles survive the
+      provider being re-created during a teardown/rebuild.
+
+Mappings:
+  Constants:
+    github:
+      owner: gjavolce
+      ownerId: "2445600"
+
+  # Slot key → the repo it trusts, that repo's numeric id, and the ONE service stack it may
+  # deploy.
+  #
+  # Slot keys carry no hyphen (neo00, not neo-00) because they become part of a CloudFormation
+  # LOGICAL ID, which must be alphanumeric. The real repo name is the `Repo` value.
+  #
+  # RepoId is NOT decoration. This account has GitHub's immutable-ID subject format enabled,
+  # so a token's `sub` reads
+  #   repo:gjavolce@2445600/neo-04@1312829121:ref:refs/heads/main
+  # and a trust policy matching only `repo:gjavolce/neo-04:*` can never match it. Both forms
+  # are listed below; getting this wrong costs a failed deploy whose message does not say so.
+  #
+  # Stack is the last segment of neobank-<env>-<Stack>. Note neo-00's is `orchestrator`, not
+  # `neo-00`: it matches ServiceName in its infra/env/*.params, not its repository name.
+  Repos:
+    neo00: { Repo: "neo-00", RepoId: "1312828683", Stack: "orchestrator" }
+    neo01: { Repo: "neo-01", RepoId: "1312828800", Stack: "neo-01" }
+    neo02: { Repo: "neo-02", RepoId: "1312828871", Stack: "neo-02" }
+    neo03: { Repo: "neo-03", RepoId: "1312828940", Stack: "neo-03" }
+    neo04: { Repo: "neo-04", RepoId: "1312829121", Stack: "neo-04" }
+    neo05: { Repo: "neo-05", RepoId: "1312829253", Stack: "neo-05" }
+    neo06: { Repo: "neo-06", RepoId: "1312829329", Stack: "neo-06" }
+    neo07: { Repo: "neo-07", RepoId: "1312829416", Stack: "neo-07" }
+    neo08: { Repo: "neo-08", RepoId: "1312829574", Stack: "neo-08" }
+    neo09: { Repo: "neo-09", RepoId: "1312829675", Stack: "neo-09" }
+    neo10: { Repo: "neo-10", RepoId: "1312829764", Stack: "neo-10" }
+
+Resources:
+
+  # --- one deploy role per repo ---------------------------------------------------------
+  Fn::ForEach::DeployRoles:
+    - Slot
+    - [neo00, neo01, neo02, neo03, neo04, neo05, neo06, neo07, neo08, neo09, neo10]
+    - DeployRole${Slot}:
+        Type: AWS::IAM::Role
+        Properties:
+          RoleName: !Sub
+            - "neobank-${EnvironmentName}-deploy-${repo}"
+            - repo: !FindInMap [Repos, !Ref Slot, Repo]
+          MaxSessionDuration: 3600
+          AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Principal: { Federated: !Ref OidcProviderArn }
+                Action: sts:AssumeRoleWithWebIdentity
+                Condition:
+                  StringEquals:
+                    token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                  # BOTH subject formats — see the RepoId note in the Repos mapping.
+                  StringLike:
+                    token.actions.githubusercontent.com:sub:
+                      - !Sub
+                        - "repo:${owner}/${repo}:*"
+                        - owner: !FindInMap [Constants, github, owner]
+                          repo: !FindInMap [Repos, !Ref Slot, Repo]
+                      - !Sub
+                        - "repo:${owner}@${ownerId}/${repo}@${repoId}:*"
+                        - owner: !FindInMap [Constants, github, owner]
+                          ownerId: !FindInMap [Constants, github, ownerId]
+                          repo: !FindInMap [Repos, !Ref Slot, Repo]
+                          repoId: !FindInMap [Repos, !Ref Slot, RepoId]
+          Policies:
+            - PolicyName: deploy-my-service-only
+              PolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                  # 1. CloudFormation only on THIS repo's one service stack.
+                  - Effect: Allow
+                    Action: cloudformation:*
+                    Resource: !Sub
+                      - "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/neobank-${EnvironmentName}-${stack}*/*"
+                      - stack: !FindInMap [Repos, !Ref Slot, Stack]
+                  # 2. Read-only CFN needed to resolve Exports and validate templates.
+                  - Effect: Allow
+                    Action: [cloudformation:ListExports, cloudformation:DescribeStacks, cloudformation:ValidateTemplate, cloudformation:GetTemplateSummary]
+                    Resource: "*"
+                  # 3. The service APIs a service stack drives. Largely un-scopable by
+                  #    resource — the DOCUMENTED residual: a team COULD poke another team's
+                  #    ECS/ELB object. Isolation is at the CloudFormation-stack + PassRole
+                  #    layer, not here. With ten student teams that is a real, accepted risk;
+                  #    what keeps it bounded is that nothing here can create or alter IAM.
+                  - Effect: Allow
+                    Action: [ecs:*, elasticloadbalancing:*, ec2:*, servicediscovery:*, logs:*]
+                    Resource: "*"
+                  # 4. PassRole ONLY the two shared platform roles (task exec + task).
+                  #    No iam:* at all — service stacks create zero IAM, so there is no
+                  #    self-escalation path out of a team's role.
+                  - Effect: Allow
+                    Action: iam:PassRole
+                    Resource:
+                      - !Sub "arn:aws:iam::${AWS::AccountId}:role/neobank-${EnvironmentName}-execution"
+                      - !Sub "arn:aws:iam::${AWS::AccountId}:role/neobank-${EnvironmentName}-task"
+                  # 5. The cfn packaging bucket.
+                  - Effect: Allow
+                    Action: [s3:PutObject, s3:GetObject, s3:ListBucket, s3:GetBucketLocation]
+                    Resource:
+                      - !Sub "arn:aws:s3:::neobank-cfn-${AWS::AccountId}-${AWS::Region}"
+                      - !Sub "arn:aws:s3:::neobank-cfn-${AWS::AccountId}-${AWS::Region}/*"
+                  # 6a. Resolve the platform's SSM wiring (db-endpoint, alb-dns) — the deploy
+                  #     principal must read these for service.yaml's {{resolve:ssm:...}} refs.
+                  - Effect: Allow
+                    Action: [ssm:GetParameter, ssm:GetParameters]
+                    Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/neobank/${EnvironmentName}/*"
+                  # 6b. Promote pins: written on a main-branch dev deploy, read on a promote.
+                  #     Scoped to this repo's own prefix, so one team cannot repoint another
+                  #     team's prod promote at an image of its choosing.
+                  - Effect: Allow
+                    Action: [ssm:PutParameter, ssm:GetParameter]
+                    Resource: !Sub
+                      - "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/neobank/promote/${repo}/*"
+                      - repo: !FindInMap [Repos, !Ref Slot, Repo]
+
+  # --- the ops power switch (parking) — scales EVERY service, so it cannot use a per-repo
+  #     deploy role scoped to one stack. Trusted for neo-00 (the ops repo) alone, and
+  #     read-only except for scaling services in this environment's cluster. ---
+  PowerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "neobank-${EnvironmentName}-power"
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: !Ref OidcProviderArn }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub:
+                  - !Sub
+                    - "repo:${owner}/neo-00:*"
+                    - owner: !FindInMap [Constants, github, owner]
+                  - !Sub
+                    - "repo:${owner}@${ownerId}/neo-00@${repoId}:*"
+                    - owner: !FindInMap [Constants, github, owner]
+                      ownerId: !FindInMap [Constants, github, ownerId]
+                      repoId: !FindInMap [Repos, neo00, RepoId]
+      Policies:
+        - PolicyName: park-and-unpark
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [cloudformation:ListExports, ecs:ListServices]
+                Resource: "*"
+              - Effect: Allow
+                Action: [ecs:UpdateService, ecs:DescribeServices]
+                Resource: !Sub "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/neobank-${EnvironmentName}/*"
+
+Outputs:
+  # One ARN per repo. Each is set as AWS_DEPLOY_ROLE_ARN on that repo's dev and prod GitHub
+  # environments — see infra/README.md.
+  Fn::ForEach::RoleArns:
+    - Slot
+    - [neo00, neo01, neo02, neo03, neo04, neo05, neo06, neo07, neo08, neo09, neo10]
+    - DeployRole${Slot}Arn:
+        Description: !Sub "AWS_DEPLOY_ROLE_ARN for ${Slot}"
+        Value: !GetAtt
+          - !Sub "DeployRole${Slot}"
+          - Arn
+
+  PowerRoleArn:
+    Description: neo-00 → set as AWS_POWER_ROLE_ARN (repo variable) for the Power workflow.
+    Value: !GetAtt PowerRole.Arn

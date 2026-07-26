@@ -1,0 +1,72 @@
+name: Power
+
+# The cost lever. On Fargate you pay per running task per second, so a parked
+# environment's compute bill is exactly zero — there is no stopped-instance equivalent to
+# reason about. The ALB and RDS keep billing either way, so parking saves the compute
+# line and nothing else.
+#
+# This changes the running count directly rather than through CloudFormation, so the
+# stack's DesiredCount parameter still says what a deploy should scale it back to: the
+# next deploy un-parks the environment. That is deliberate — deploying means "I want this
+# running".
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Which environment
+        type: choice
+        options: [dev, prod]
+        required: true
+      count:
+        description: Tasks per slot — 0 to park, 1 to run
+        type: choice
+        options: ["0", "1"]
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: neobank-deploy      # never race a deploy
+  cancel-in-progress: false
+
+jobs:
+  power:
+    name: ${{ inputs.environment }} → ${{ inputs.count }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Assume the power role
+        # NOT the per-repo deploy role (scoped to one service stack) — power scales every
+        # service, so it uses the cluster-scoped power role. Set AWS_POWER_ROLE_ARN on each
+        # environment from roles.yaml's PowerRoleArn output.
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_POWER_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Set the desired count on every service
+        run: |
+          set -euo pipefail
+          ENV="${{ inputs.environment }}"
+          # Services now live in per-repo stacks, not one monolith output. Enumerate them off
+          # the shared cluster instead — this covers however many teams have deployed.
+          CLUSTER=$(aws cloudformation list-exports \
+            --query "Exports[?Name=='neobank-$ENV-ClusterArn'].Value" --output text)
+          mapfile -t SERVICES < <(aws ecs list-services --cluster "$CLUSTER" \
+            --query 'serviceArns[]' --output text | tr '\t' '\n')
+          if [ "${#SERVICES[@]}" -eq 0 ]; then echo "no services in neobank-$ENV"; exit 0; fi
+
+          for s in "${SERVICES[@]}"; do
+            aws ecs update-service --cluster "$CLUSTER" --service "$s" \
+              --desired-count "${{ inputs.count }}" >/dev/null
+            echo "$(basename "$s") -> ${{ inputs.count }}"
+          done
+
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "${SERVICES[@]}"
+          echo "neobank-$ENV is now at ${{ inputs.count }} task(s) per service"
+          if [ "${{ inputs.count }}" = "0" ]; then
+            echo "Compute billing has stopped. The ALB and RDS have not — delete the"
+            echo "stack if you are done with the environment rather than just idle."
+          fi

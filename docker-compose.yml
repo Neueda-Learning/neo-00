@@ -1,0 +1,309 @@
+# THE SYSTEM STACK: one MySQL + the orchestrator + all TEN modules, each with its own UI.
+# 23 containers, one command, no cloud and no internet needed once the images are built.
+#
+#   git clone --recurse-submodules https://github.com/gjavolce/neo-00.git
+#   cd neo-00 && docker compose up --build
+#   → http://localhost:3000   the orchestrator: the board, the journey, start/stop
+#   → http://localhost:3001   module 01's operator UI … 3010 for module 10
+#   → http://localhost:9000   the orchestrator API   9001…9010 the modules' APIs
+#
+# neo-01 … neo-10 are git submodules. If those folders are empty you cloned without
+# --recurse-submodules: run `git submodule update --init` first, or the build fails on a
+# missing Dockerfile.
+#
+# You do not need all ten to run: `docker compose up orchestrator frontend-00 neo-01
+# frontend-01` starts any subset. The orchestrator does not mind — a step whose module does
+# not answer times out after CALLBACK_TIMEOUT and that application ends FAILED, which is
+# exactly what should happen.
+#
+# To run two stacks at once, move the host ports:
+#   UI_PORT=3100 API_PORT=9100 MYSQL_PORT=3426 docker compose up --build
+name: neo-bank
+
+# ---------------------------------------------------------------------------------------
+# What every module shares. Ten near-identical blocks is a lot of YAML to keep in step, so
+# the shared half lives here once and each module below sets only what makes it itself.
+# ---------------------------------------------------------------------------------------
+x-module-env: &module-env
+  DB_USERNAME: appuser
+  DB_PASSWORD: apppass
+  # The REAL orchestrator, not a sidecar. Each module's own compose runs a sidecar (a mock
+  # orchestrator) so a team can work alone; in here the real one is up, and two things
+  # claiming to be the caller is how you end up debugging a status update that went nowhere.
+  ORCHESTRATOR_URL: http://orchestrator:8080
+  # The JVM sizes its heap from the CONTAINER limit when there is one, and from the HOST's
+  # RAM when there is not. With eleven JVMs on one laptop that is the difference between a
+  # stack that boots and a machine that swaps — each would otherwise help itself to a
+  # quarter of all your memory. Paired with mem_limit below; neither works alone.
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70
+
+x-module: &module
+  restart: on-failure
+  mem_limit: 512m
+  depends_on:
+    mysql:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "-fs", "http://localhost:8080/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 40s
+
+services:
+
+  # ---- the one database: eleven schemas, and no service may read another's ----
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: neo_00
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppass
+    ports:
+      - "${MYSQL_PORT:-3326}:3306"   # inspect from Workbench; containers use mysql:3306
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro   # creates the 11 schemas on FIRST boot only
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uappuser", "-papppass"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  # ---- neo-00: the orchestrator ----
+
+  orchestrator:
+    build: ./backend
+    mem_limit: 640m
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/neo_00
+      DB_USERNAME: appuser
+      DB_PASSWORD: apppass
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70
+      STEP_DELAY: "${STEP_DELAY:-1s}"
+      CALLBACK_TIMEOUT: "${CALLBACK_TIMEOUT:-30s}"
+      # Off at boot: the orchestrator dispatches to modules that report back to it, so it
+      # must not start firing before the stack is up. Turn it on in the UI.
+      GENERATOR_ENABLED: "${GENERATOR_ENABLED:-false}"
+      GENERATOR_INTERVAL_MS: "${GENERATOR_INTERVAL_MS:-5000}"
+      # The ten steps. application.yml already declares all ten — sequence, ids and names —
+      # with localhost:900N defaults, which is what you want when the orchestrator runs in
+      # your IDE. In here only the URLs change, to compose service names. So the journey is
+      # edited in ONE place (application.yml) and this list stays a wiring detail.
+      SERVICE_01_URL: http://neo-01:8080
+      SERVICE_02_URL: http://neo-02:8080
+      SERVICE_03_URL: http://neo-03:8080
+      SERVICE_04_URL: http://neo-04:8080
+      SERVICE_05_URL: http://neo-05:8080
+      SERVICE_06_URL: http://neo-06:8080
+      SERVICE_07_URL: http://neo-07:8080
+      SERVICE_08_URL: http://neo-08:8080
+      SERVICE_09_URL: http://neo-09:8080
+      SERVICE_10_URL: http://neo-10:8080
+    ports:
+      - "${API_PORT:-9000}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  frontend-00:
+    build: ./frontend
+    environment: { BACKEND_HOST: orchestrator }
+    ports: ["${UI_PORT:-3000}:80"]
+    depends_on: [orchestrator]
+
+  # ---- the ten modules ----
+  #
+  # serviceId has no hyphen (neo-01 → neo01) — that is what a module puts on its status
+  # update, and what the orchestrator matches the step on. The mismatch is intentional.
+  #
+  # A module's identity is env, not code: the same skeleton image is all ten services until a
+  # team writes rules into it. SERVICE_TEAM is what its UI's identity box shows, and
+  # MOCKED_DEPENDENCIES is deliverable #4's register served live on /info — set only on the
+  # four integration modules, because the six rule modules genuinely mock nothing.
+
+  neo-01:
+    <<: *module
+    build: ./neo-01/backend
+    environment:
+      <<: *module-env
+      DB_URL: jdbc:mysql://mysql:3306/neo_01
+      SERVICE_ID: neo01
+      SERVICE_NAME: Application Verification
+      SERVICE_DOMAIN: verification
+      SERVICE_TEAM: Team 01
+    ports: ["9001:8080"]
+  frontend-01:
+    build: ./neo-01/frontend
+    environment: { BACKEND_HOST: neo-01 }
+    ports: ["3001:80"]
+    depends_on: [neo-01]
+
+  neo-02:
+    <<: *module
+    build: ./neo-02/backend
+    environment:
+      <<: *module-env
+      DB_URL: jdbc:mysql://mysql:3306/neo_02
+      SERVICE_ID: neo02
+      SERVICE_NAME: Customer Policy
+      SERVICE_DOMAIN: policy
+      SERVICE_TEAM: Team 02
+    ports: ["9002:8080"]
+  frontend-02:
+    build: ./neo-02/frontend
+    environment: { BACKEND_HOST: neo-02 }
+    ports: ["3002:80"]
+    depends_on: [neo-02]
+
+  neo-03:
+    <<: *module
+    build: ./neo-03/backend
+    environment:
+      <<: *module-env
+      DB_URL: jdbc:mysql://mysql:3306/neo_03
+      SERVICE_ID: neo03
+      SERVICE_NAME: Identity Verification (KYC)
+      SERVICE_DOMAIN: kyc
+      SERVICE_TEAM: Team 03
+      MOCKED_DEPENDENCIES: id-verification-provider
+    ports: ["9003:8080"]
+  frontend-03:
+    build: ./neo-03/frontend
+    environment: { BACKEND_HOST: neo-03 }
+    ports: ["3003:80"]
+    depends_on: [neo-03]
+
+  neo-04:
+    <<: *module
+    build: ./neo-04/backend
+    environment:
+      <<: *module-env
+      DB_URL: jdbc:mysql://mysql:3306/neo_04
+      SERVICE_ID: neo04
+      SERVICE_NAME: Fraud & AML Screening
+      SERVICE_DOMAIN: screening
+      SERVICE_TEAM: Team 04
+      MOCKED_DEPENDENCIES: sanctions-list
+    ports: ["9004:8080"]
+  frontend-04:
+    build: ./neo-04/frontend
+    environment: { BACKEND_HOST: neo-04 }
+    ports: ["3004:80"]
+    depends_on: [neo-04]
+
+  neo-05:
+    <<: *module
+    build: ./neo-05/backend
+    environment:
+      <<: *module-env
+      DB_URL: jdbc:mysql://mysql:3306/neo_05
+      SERVICE_ID: neo05
+      SERVICE_NAME: Credit Decisioning
+      SERVICE_DOMAIN: credit
+      SERVICE_TEAM: Team 05
+    ports: ["9005:8080"]
+  frontend-05:
+    build: ./neo-05/frontend
+    environment: { BACKEND_HOST: neo-05 }
+    ports: ["3005:80"]
+    depends_on: [neo-05]
+
+  neo-06:
+    <<: *module
+    build: ./neo-06/backend
+    environment:
+      <<: *module-env
+      DB_URL: jdbc:mysql://mysql:3306/neo_06
+      SERVICE_ID: neo06
+      SERVICE_NAME: Agreement Management
+      SERVICE_DOMAIN: agreement
+      SERVICE_TEAM: Team 06
+      MOCKED_DEPENDENCIES: e-sign-provider, document-store
+    ports: ["9006:8080"]
+  frontend-06:
+    build: ./neo-06/frontend
+    environment: { BACKEND_HOST: neo-06 }
+    ports: ["3006:80"]
+    depends_on: [neo-06]
+
+  neo-07:
+    <<: *module
+    build: ./neo-07/backend
+    environment:
+      <<: *module-env
+      DB_URL: jdbc:mysql://mysql:3306/neo_07
+      SERVICE_ID: neo07
+      SERVICE_NAME: Card Account Setup
+      SERVICE_DOMAIN: account
+      SERVICE_TEAM: Team 07
+      MOCKED_DEPENDENCIES: core-banking
+    ports: ["9007:8080"]
+  frontend-07:
+    build: ./neo-07/frontend
+    environment: { BACKEND_HOST: neo-07 }
+    ports: ["3007:80"]
+    depends_on: [neo-07]
+
+  neo-08:
+    <<: *module
+    build: ./neo-08/backend
+    environment:
+      <<: *module-env
+      DB_URL: jdbc:mysql://mysql:3306/neo_08
+      SERVICE_ID: neo08
+      SERVICE_NAME: Card Issuing
+      SERVICE_DOMAIN: card
+      SERVICE_TEAM: Team 08
+      MOCKED_DEPENDENCIES: card-personalisation-bureau
+    ports: ["9008:8080"]
+  frontend-08:
+    build: ./neo-08/frontend
+    environment: { BACKEND_HOST: neo-08 }
+    ports: ["3008:80"]
+    depends_on: [neo-08]
+
+  neo-09:
+    <<: *module
+    build: ./neo-09/backend
+    environment:
+      <<: *module-env
+      DB_URL: jdbc:mysql://mysql:3306/neo_09
+      SERVICE_ID: neo09
+      SERVICE_NAME: Customer Support
+      SERVICE_DOMAIN: support
+      SERVICE_TEAM: Team 09
+    ports: ["9009:8080"]
+  frontend-09:
+    build: ./neo-09/frontend
+    environment: { BACKEND_HOST: neo-09 }
+    ports: ["3009:80"]
+    depends_on: [neo-09]
+
+  neo-10:
+    <<: *module
+    build: ./neo-10/backend
+    environment:
+      <<: *module-env
+      DB_URL: jdbc:mysql://mysql:3306/neo_10
+      SERVICE_ID: neo10
+      SERVICE_NAME: Portfolio & Regulatory Analytics
+      SERVICE_DOMAIN: analytics
+      SERVICE_TEAM: Team 10
+    ports: ["9010:8080"]
+  frontend-10:
+    build: ./neo-10/frontend
+    environment: { BACKEND_HOST: neo-10 }
+    ports: ["3010:80"]
+    depends_on: [neo-10]
+
+volumes:
+  mysql-data:

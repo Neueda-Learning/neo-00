@@ -1,0 +1,40 @@
+# neo-00's OWN service (the orchestrator), on prod. Per-repo values only. The pipeline
+# adds EnvironmentName + the PINNED @sha256 images (the exact ones dev proved — never :latest)
+# + DbEndpoint + AlbDnsName. Differs from dev.params ONLY in the Cloud Map hosts below
+# (neobank-prod.local instead of neobank-dev.local) — if anything else diverges, prod is no
+# longer the thing dev proved.
+ServiceName=orchestrator
+Role=orchestrator
+PathPrefix=
+ListenerRulePriority=50000
+DbName=neo_00
+Step1ServiceId=neo01
+Step1Name=Application Verification
+Step1BaseUrl=http://neo-01.neobank-prod.local:8080
+Step2ServiceId=neo02
+Step2Name=Customer Policy
+Step2BaseUrl=http://neo-02.neobank-prod.local:8080
+Step3ServiceId=neo03
+Step3Name=Identity Verification (KYC)
+Step3BaseUrl=http://neo-03.neobank-prod.local:8080
+Step4ServiceId=neo04
+Step4Name=Fraud & AML Screening
+Step4BaseUrl=http://neo-04.neobank-prod.local:8080
+Step5ServiceId=neo05
+Step5Name=Credit Decisioning
+Step5BaseUrl=http://neo-05.neobank-prod.local:8080
+Step6ServiceId=neo06
+Step6Name=Agreement Management
+Step6BaseUrl=http://neo-06.neobank-prod.local:8080
+Step7ServiceId=neo07
+Step7Name=Card Account Setup
+Step7BaseUrl=http://neo-07.neobank-prod.local:8080
+Step8ServiceId=neo08
+Step8Name=Card Issuing
+Step8BaseUrl=http://neo-08.neobank-prod.local:8080
+Step9ServiceId=neo09
+Step9Name=Customer Support
+Step9BaseUrl=http://neo-09.neobank-prod.local:8080
+Step10ServiceId=neo10
+Step10Name=Portfolio & Regulatory Analytics
+Step10BaseUrl=http://neo-10.neobank-prod.local:8080

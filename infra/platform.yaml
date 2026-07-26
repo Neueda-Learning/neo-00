@@ -1,0 +1,432 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  neobank PLATFORM: the shared environment every service stack plugs into — network,
+  database, ECS cluster, ALB + listener, Cloud Map, logs, the shared IAM roles, the GitHub
+  OIDC provider, and the db-init task definition. Deployed once per environment
+  (EnvironmentName=dev, then prod) from a laptop with admin. Everything a per-repo service
+  stack needs is published as a CloudFormation Export (stable wiring) or an SSM parameter
+  (values that change when a resource is replaced). The per-repo DEPLOY ROLES live in
+  roles.yaml; the SERVICES live in each repo's own service.yaml.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "Environment" }
+        Parameters: [EnvironmentName, AllowedCidr]
+      - Label: { default: "Database" }
+        Parameters: [DbInstanceClass, DbAllocatedStorage]
+      - Label: { default: "GitHub OIDC (account-global; dev owns it, prod references it)" }
+        Parameters: [CreateOidcProvider, ExistingOidcProviderArn]
+      - Label: { default: "Container registry" }
+        Parameters: [GhcrSecretArn]
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    AllowedValues: [dev, prod]
+    Description: Names every resource and isolates the two environments from each other.
+
+  AllowedCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: Who may reach the ALB on port 80. Narrow to the training network to hide the demo.
+
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+    AllowedValues: [db.t4g.micro, db.t4g.small, db.t4g.medium]
+    Description: >-
+      micro (~85 connections) is fine for the pilot. Ten slots at Hikari's default pool of
+      10 wants small (~170) or a capped pool.
+  DbAllocatedStorage:
+    Type: Number
+    Default: 20
+
+  CreateOidcProvider:
+    Type: String
+    AllowedValues: ["Yes", "No"]
+    Default: "Yes"
+    Description: >-
+      The GitHub OIDC provider is account-global, so exactly one stack may own it. Deploy
+      the dev platform with Yes, then the prod platform with No plus the ARN below.
+  ExistingOidcProviderArn:
+    Type: String
+    Default: ""
+
+  GhcrSecretArn:
+    Type: String
+    Description: >-
+      ARN of a Secrets Manager secret holding {"username","password"} for a ghcr.io
+      read-only PAT. ECS requires Secrets Manager specifically for private registries.
+      Created once by hand; see infra/README.md.
+
+Conditions:
+  MakeOidcProvider: !Equals [!Ref CreateOidcProvider, "Yes"]
+
+Resources:
+
+  # ---------------------------------------------------------------- network
+  # Two public subnets, no NAT gateway. Tasks get public IPs so they can pull from ghcr.io;
+  # a NAT gateway would cost more per month than everything else here. Inbound is closed to
+  # all but the ALB.
+
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.20.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true      # required for the Cloud Map private namespace
+      Tags:
+        - { Key: Name, Value: !Sub "neobank-${EnvironmentName}" }
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  SubnetARoute:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref SubnetA, RouteTableId: !Ref PublicRouteTable }
+  SubnetBRoute:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref SubnetB, RouteTableId: !Ref PublicRouteTable }
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "neobank-${EnvironmentName} ALB"
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: !Ref AllowedCidr }
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "neobank-${EnvironmentName} tasks"
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  # Slot-to-slot traffic on 8080: the orchestrator dispatching to a module, and the module
+  # calling back. Separate resource because a security group cannot reference itself inline.
+  TaskToTaskRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref TaskSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId: !Ref TaskSecurityGroup
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "neobank-${EnvironmentName} database"
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref TaskSecurityGroup
+
+  # ---------------------------------------------------------------- database
+  # One instance, one schema per slot. Schema isolation is the rule the whole system rests
+  # on: a slot migrates its OWN schema with Liquibase and never reads another's. The
+  # platform creates only the shared appuser; each service creates its own schema on deploy.
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub "neobank-${EnvironmentName}"
+      SubnetIds: [!Ref SubnetA, !Ref SubnetB]
+
+  # The application account. A generated password nobody ever sees: appuser db-init creates
+  # the user with it and every task reads it straight from here.
+  AppDbSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "neobank/${EnvironmentName}/appuser"
+      Description: MySQL credentials the slots connect with.
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"appuser"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        # Alphanumeric only: this password travels through a JDBC URL and is sed'd into SQL,
+        # so every punctuation class is a potential escaping bug in someone else's parser.
+        ExcludePunctuation: true
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    # A disposable pilot: Delete, not Snapshot, so a teardown-and-recreate rehearsal leaves
+    # no snapshot clutter to prune. Set to Snapshot if the data ever stops being disposable.
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub "neobank-${EnvironmentName}"
+      Engine: mysql
+      EngineVersion: "8.4.6"
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref DbAllocatedStorage
+      StorageType: gp3
+      ManageMasterUserPassword: true
+      MasterUsername: admin
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!Ref DbSecurityGroup]
+      PubliclyAccessible: false
+      MultiAZ: false
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+
+  # ---------------------------------------------------------------- cluster + routing
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "neobank-${EnvironmentName}"
+      ClusterSettings:
+        - { Name: containerInsights, Value: disabled }
+
+  # The cloud twin of Compose's internal DNS: slots address each other by name.
+  Namespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub "neobank-${EnvironmentName}.local"
+      Vpc: !Ref Vpc
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/neobank/${EnvironmentName}"
+      RetentionInDays: 14
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "neobank-${EnvironmentName}"
+      Scheme: internet-facing
+      Type: application
+      Subnets: [!Ref SubnetA, !Ref SubnetB]
+      SecurityGroups: [!Ref AlbSecurityGroup]
+
+  # A 404 default. Every service stack attaches its own path rule to this shared listener.
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: "404"
+            ContentType: text/plain
+            MessageBody: "no slot is registered at this path"
+
+  # ---------------------------------------------------------------- shared IAM
+  # The two roles every task runs as. Service stacks PassRole these; they create no IAM.
+
+  # Pulls images and fetches secrets. The agent's identity, not the app's.
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "neobank-${EnvironmentName}-execution"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: read-the-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref GhcrSecretArn
+                  - !Ref AppDbSecret
+                  - !GetAtt Database.MasterUserSecret.SecretArn
+
+  # The application's own identity: it needs only to be shelled into for debugging.
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "neobank-${EnvironmentName}-task"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ecs-exec
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
+
+  # Account-global: dev's platform owns it, prod's references it. roles.yaml trusts it by
+  # its (stable) ARN string, so the per-repo deploy roles survive a provider re-create.
+  GithubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList: [6938fd4d98bab03faadb97b34396831e3780aea1]
+
+  # ---------------------------------------------------------------- schema bootstrap
+  # RDS is not the mysql image: no MYSQL_USER to conjure appuser, and its master may not
+  # GRANT ... ON *.*. The db-init task is empty of SQL — a deploy pipes the right SQL in as
+  # a container override: the platform deploy pipes appuser.sql; each service deploy pipes
+  # its own schema DDL + grant. Shared task def, exported for every service to run.
+  DbInitTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "neobank-${EnvironmentName}-db-init"
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: db-init
+          Image: mysql:8.4
+          Essential: true
+          EntryPoint: [sh, -c]
+          Command: ["echo 'no SQL supplied; a deploy overrides this'"]
+          Environment:
+            - { Name: DB_HOST, Value: !GetAtt Database.Endpoint.Address }
+          Secrets:
+            - Name: MASTER_USER
+              ValueFrom: !Sub "${Database.MasterUserSecret.SecretArn}:username::"
+            - Name: MASTER_PASSWORD
+              ValueFrom: !Sub "${Database.MasterUserSecret.SecretArn}:password::"
+            - Name: APP_PASSWORD
+              ValueFrom: !Sub "${AppDbSecret}:password::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: db-init
+
+  # ---------------------------------------------------------------- fragile wiring via SSM
+  # DbEndpoint and AlbDnsName are the only wiring whose VALUE changes when the resource is
+  # replaced. An Export cannot change while imported, so publishing these as Exports would
+  # lock the ALB/RDS against ever being replaced while any service imports them. SSM
+  # parameters carry no such lock — service.yaml reads them as {{resolve:ssm:...}} at deploy
+  # time, so a replacement just updates the value and services pick it up on their next deploy.
+  DbEndpointParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/neobank/${EnvironmentName}/db-endpoint"
+      Type: String
+      Value: !GetAtt Database.Endpoint.Address
+  AlbDnsParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/neobank/${EnvironmentName}/alb-dns"
+      Type: String
+      Value: !GetAtt LoadBalancer.DNSName
+
+Outputs:
+  # --- hard Exports: the stable wiring every service.yaml imports ---
+  ClusterArn:
+    Value: !GetAtt Cluster.Arn
+    Export: { Name: !Sub "neobank-${EnvironmentName}-ClusterArn" }
+  VpcId:
+    Value: !Ref Vpc
+    Export: { Name: !Sub "neobank-${EnvironmentName}-VpcId" }
+  SubnetIds:
+    Value: !Join [",", [!Ref SubnetA, !Ref SubnetB]]
+    Export: { Name: !Sub "neobank-${EnvironmentName}-SubnetIds" }
+  TaskSgId:
+    Value: !Ref TaskSecurityGroup
+    Export: { Name: !Sub "neobank-${EnvironmentName}-TaskSgId" }
+  ListenerArn:
+    # Deliberately a HARD export: swapping the ALB/listener should be a coordinated event
+    # that forces every service to re-attach its rule, not a silent per-service drift.
+    Value: !Ref Listener
+    Export: { Name: !Sub "neobank-${EnvironmentName}-ListenerArn" }
+  NamespaceId:
+    Value: !GetAtt Namespace.Id
+    Export: { Name: !Sub "neobank-${EnvironmentName}-NamespaceId" }
+  NamespaceName:
+    Value: !Sub "neobank-${EnvironmentName}.local"
+    Export: { Name: !Sub "neobank-${EnvironmentName}-NamespaceName" }
+  ExecRoleArn:
+    Value: !GetAtt ExecutionRole.Arn
+    Export: { Name: !Sub "neobank-${EnvironmentName}-ExecRoleArn" }
+  TaskRoleArn:
+    Value: !GetAtt TaskRole.Arn
+    Export: { Name: !Sub "neobank-${EnvironmentName}-TaskRoleArn" }
+  LogGroupName:
+    Value: !Ref LogGroup
+    Export: { Name: !Sub "neobank-${EnvironmentName}-LogGroup" }
+  DbSecretArn:
+    Value: !Ref AppDbSecret
+    Export: { Name: !Sub "neobank-${EnvironmentName}-DbSecretArn" }
+  GhcrSecretArn:
+    Value: !Ref GhcrSecretArn
+    Export: { Name: !Sub "neobank-${EnvironmentName}-GhcrSecretArn" }
+  DbInitTaskDef:
+    Value: !Ref DbInitTaskDefinition
+    Export: { Name: !Sub "neobank-${EnvironmentName}-DbInitTaskDef" }
+
+  # --- values NOT exported on purpose (read via SSM); surfaced here for humans/scripts ---
+  AlbDnsName:
+    Description: The board's host. Also at /neobank/<env>/alb-dns in SSM. Hand this out.
+    Value: !GetAtt LoadBalancer.DNSName
+  BoardUrl:
+    Value: !Sub "http://${LoadBalancer.DNSName}/"
+  DbEndpoint:
+    Value: !GetAtt Database.Endpoint.Address
+
+  # --- OIDC provider ARN: paste into the prod platform's ExistingOidcProviderArn, and it
+  #     is what roles.yaml trusts (as a constant string) ---
+  OidcProviderArn:
+    Description: Pass to the prod platform as ExistingOidcProviderArn; roles.yaml trusts this.
+    Value: !If [MakeOidcProvider, !Ref GithubOidcProvider, !Ref ExistingOidcProviderArn]
