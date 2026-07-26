@@ -1,44 +1,49 @@
 # AGENTS.md — working in this repo
 
-**attempt-02** is a rehearsal of the *deployment*, not of banking. Two repos, a submodule,
-one compose, a request→`202`→callback loop, and — the part attempt-01 never had — a
-push-to-AWS pipeline in `infra/` and `.github/workflows/deploy.yml`. The "business logic"
-inside the service is a seeded weighted coin flip, on purpose; don't grow it into real
-rules. What is being tested is that a push becomes a running environment and that the
-orchestrator can reach the service across the network it finds there.
+**neo-00 is the platform**, not a module. It owns the journey, the board, the AWS
+environment and the shared contract; ten separately-owned module repos plug into it as git
+submodules. It is instructor-owned — teams treat it as fixed ground and never send a PR here.
+
+The business logic lives in the *modules*, and each module's is its team's to write. Nothing
+in this repo should ever contain a rule about income, sanctions or card limits.
 
 ## Before anything else
 
-This repo has **git submodules**. If `neo-01/` looks empty:
+This repo has **ten git submodules**. If the `neo-NN/` folders look empty:
 
 ```bash
 git submodule update --init
 ```
 
-Nothing builds until that has run.
+Nothing builds until that has run. You do not need all ten running to work on the
+orchestrator — `docker compose up orchestrator frontend-00 neo-01 frontend-01` is enough, and
+absent modules simply time out.
 
 ## The rules that hold the thing together
 
-1. **The contract is fixed** (`api-contract.md`). A service answers `POST
-   /api/v1/applications` with **`202`** `{status:"in-progress", applicationId, serviceId,
-   command}` and calls back with exactly four fields `{applicationId, serviceId, status,
-   comment}`, `status` ∈ `ACCEPTED · REJECTED · REFERRED`. Every deployed service depends
-   on that shape; `CallbackControllerTest` and `ApplicationControllerTest` pin it. If a change
-   makes them fail, the change is wrong.
-2. **`serviceId` ≠ repo name.** `neo-01` is the repository; `neo01` is what it
-   sends on callbacks. Intentional — don't "fix" it.
+1. **The contract is fixed** (`api-contract.md`), and now **ten repos depend on it**. A module
+   answers `POST /api/v1/applications` with **`202`** `{status:"in-progress", applicationId,
+   serviceId, command}` and reports its outcome with `PUT /api/v1/applications/{id}` carrying
+   exactly three fields `{serviceId, status, comment}`, `status` ∈ `ACCEPTED · REJECTED ·
+   REFERRED`. `ApplicationControllerTest` pins it. If a change makes it fail, the change is
+   wrong — and here that is not a figure of speech: a breaking edit lands on ten teams at once,
+   so it has to be made in the orchestrator, the sidecar and the template together.
+2. **`serviceId` ≠ repo name.** `neo-04` is the repository; `neo04` is what it sends.
+   Intentional — don't "fix" it.
 3. **`application_event` is append-only.** Insert; never update, never delete. Both screens
    and the service summary are *derived* from it, so a wrong fact is corrected by another
    row, not an edit.
 4. **Only `ACCEPTED` advances a journey.** Everything else is terminal.
-5. **A terminal application never restarts.** `SagaStore.recordCallback` short-circuits on
-   `isTerminal()`. Removing that lets a callback arriving after the timeout sweeper
-   resurrect a dead journey — there is a test for exactly this.
-6. **The saga length is configuration, not code.** `application.yml` declares ten steps and
-   must stay that way — `SagaFlowTest` asserts against `neo02` and `neo07`. The
-   pilot runs one step because `docker-compose.yml` and the ECS task definition set
-   `ORCHESTRATOR_SERVICES_0_*`, which replace the list wholesale. Never "fix" this by
-   editing the yml. The check is `GET /api/v1/services` returning one row; CI asserts it.
+5. **A terminal application never restarts.** `SagaStore.recordApplicationStatusUpdate`
+   short-circuits on `isTerminal()`. Removing that lets an answer arriving after the timeout
+   sweeper resurrect a dead journey — there is a test for exactly this.
+6. **The journey is configuration, not code.** `application.yml` declares the ten steps —
+   order, `serviceId`, display name — and is the ONE place the sequence is defined.
+   `docker-compose.yml` and the ECS task definition override only the base URLs. Beware:
+   Spring Boot does not merge collections across property sources, so anything supplying
+   `orchestrator.services` supplies **all** of it; that is why `infra/env/*.params` lists all
+   ten slots rather than patching a few. The check is `GET /api/v1/services` returning ten
+   rows.
 7. **The front end's path prefix is baked at build time.** Vite writes asset URLs into
    index.html when the image is built, and an ALB cannot rewrite paths, so `APP_BASE_PATH`
    is a Docker build argument. It must equal the slot's `PathPrefix` in

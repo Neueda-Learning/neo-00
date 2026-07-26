@@ -1,11 +1,13 @@
-# attempt-02 — API contract
+# neo-bank onboarding — API contract
 
-**One orchestrator (`neo-00`) and one service (`neo-01`).** The wire is unchanged
-from attempt-01 — this is the same contract with nine slots removed, so what is proven here
-transfers to the full set by adding them back. The application payload is lifted from the
-hackathon's real contract (`neo-capstone/api-contract.md` §3), so the envelope teams will
-actually receive is rehearsed and is **modelled as typed records** in the service. The *logic*
-inside the service is deliberately a placeholder: it logs, writes one row, and answers ACCEPTED.
+**One orchestrator (`neo-00`) and ten modules (`neo-01` … `neo-10`), one per team.** This is
+the whole wire: every field that crosses a repository boundary is here, and nothing else
+does. The application payload is the hackathon's real one, and each module **models it as
+typed records** rather than digging through a map.
+
+The *logic* inside a module is deliberately a placeholder when a team receives it: it logs,
+writes one row, and answers `ACCEPTED`. Replacing that placeholder with real business rules
+is the work. **The contract is not.**
 
 ---
 
@@ -14,14 +16,17 @@ inside the service is deliberately a placeholder: it logs, writes one row, and a
 ```
 neo-00 ──POST /api/v1/applications──▶ neo-01
             ◀──────── 202 in-progress ────
-                  (works off-thread)
+                  (decides off-thread)
             ◀──PUT /api/v1/applications/{id}    {status: ACCEPTED}
    wait 1s
-
-(attempt-01 continued with nine more steps here. The sequence is a list in
-`application.yml`, cut to one entry by the ORCHESTRATOR_SERVICES_0_* environment
-variables — see the README.)
+       ──POST /api/v1/applications──▶ neo-02
+            … and so on through neo-10, or until someone does not say ACCEPTED
 ```
+
+The sequence itself is a list in the orchestrator's `application.yml`; environments override
+only the base URLs. A module never learns its own step number and must not depend on one —
+the order is exchangeable, and every module receives the **whole application** and reads the
+fields it needs.
 
 - The orchestrator dispatches **one service at a time** and **waits for the status update**
   before moving on — the `202` only acknowledges receipt.
@@ -92,18 +97,23 @@ would only create a way for the two to disagree. An `applicationId` left in the 
 
 | Field | Notes |
 |---|---|
-| `serviceId` | `neo01` … `neo10` — **note it has no `-a`**, unlike the repo name `neo-01` |
-| `status` | `ACCEPTED` · `REJECTED` · `REFERRED` — the same three for every service |
-| `comment` | free text, shown in the event log — the service's reason for the outcome |
+| `serviceId` | `neo01` … `neo10` — your repo name **without the hyphen** (`neo-04` → `neo04`) |
+| `status` | `ACCEPTED` · `REJECTED` · `REFERRED` — the same three for every module |
+| `comment` | free text, shown in the event log — your module's reason for the outcome |
 
-`status` comes from the service's own `ApplicationService.processApplication()`. The skeleton
-answers `ACCEPTED` unconditionally, so **every journey completes** and one that does not means the
-wire is genuinely broken — which is what this stack exists to test.
+Three statuses, for all ten modules, whatever the topic. A module that wants to say
+"passed" / "clear" / "signed" / "issued" says `ACCEPTED` on the wire and says the domain word
+in `comment` and on its own screens. Ten modules inventing ten vocabularies is ten things the
+orchestrator would have to know about.
 
-> This used to be a seeded weighted RNG (`WEIGHT_ACCEPTED` and friends, default 70/15/15), which
-> made P(reaching step 10) ≈ 2.8% and needed pinning to 100 for any demo. Those knobs are gone.
-> To see `REJECTED` or `REFERRED` on the board, write logic in the service: the generator's
-> applications vary, so one real rule gives outcomes that vary *and* can be explained.
+`status` comes from your own `ApplicationService.processApplication()`. The skeleton answers
+`ACCEPTED` unconditionally, so **every journey completes out of the box** — which means a
+journey that does *not* complete is a genuine fault rather than a module having an opinion.
+
+> To see `REJECTED` or `REFERRED` on the board, write a rule. The orchestrator's generated
+> applicants vary (income, age, country, product, document), so one real rule produces
+> outcomes that vary *and* can be explained — which is the point, and which a random number
+> could never do.
 
 Response is `200 {"received": true, "applicationId": "APP-0001"}`. A service that cannot reach the
 orchestrator logs a warning and drops the update — the orchestrator's timeout sweeper is what
