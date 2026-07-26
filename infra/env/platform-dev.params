@@ -3,6 +3,21 @@
 # OIDC provider. GhcrSecretArn is the hand-created ghcr.io pull secret (see infra/README.md).
 EnvironmentName=dev
 AllowedCidr=0.0.0.0/0
+# STUCK ON micro, and it is a hard constraint rather than a choice.
+#
+# max_connections is derived from instance MEMORY (DBInstanceClassMemory/12582880), so
+# micro's 1 GiB gives exactly 60 — MEASURED on the live instance, not read off the formula.
+# That is the ceiling every service on this platform shares, and exceeding it kills a module
+# in Liquibase with 'Too many connections', which reads as a broken module rather than as an
+# exhausted budget nobody was counting.
+#
+# db.t4g.small would double it to ~127. It was tried on 2026-07-27 and REFUSED:
+#   "This instance size isn't available with free plan accounts."
+# The stack rolled back cleanly with no data loss. Upgrading the AWS account plan is the
+# only way to this lever.
+#
+# So the budget is enforced on the OTHER side instead — small connection pools, sized in
+# infra/README.md § Connection budget. Do not raise a pool without doing that arithmetic.
 DbInstanceClass=db.t4g.micro
 DbAllocatedStorage=20
 CreateOidcProvider=Yes

@@ -127,6 +127,50 @@ into the orchestrator's saga, add its `Step*` to the orchestrator repo's params 
 
 ---
 
+## Connection budget
+
+**One database, 60 connections, eleven services. This is a shared budget, and it has to be
+spent deliberately — the failure mode does not look like a shortage.**
+
+The number is measured, not estimated:
+
+```
+SHOW VARIABLES LIKE 'max_connections';   -> 60
+```
+
+It derives from instance memory (`DBInstanceClassMemory/12582880`), so the only way to raise
+it is a bigger instance — and `db.t4g.small` is **refused on this account's free plan**
+(tried 2026-07-27; the stack rolled back cleanly). Treat 60 as fixed.
+
+| | pool | × | = |
+|---|---|---|---|
+| each module | 3 | 10 | 30 |
+| orchestrator | 5 | 1 | 5 |
+| **committed** | | | **35** |
+| spare | | | **25** |
+
+The spare is not slack, it is what the rest of the system runs on: the `db-init` task on every
+deploy, the `Database repair` workflow, and anyone with Workbench open.
+
+**Why it matters more than it sounds.** Exhausting the pool does not queue — a starting service
+dies in **Liquibase** with `Too many connections`, which reads as a broken module rather than an
+exhausted budget. And once the ceiling is hit, `db-init` cannot connect to *create a schema*
+either, so the failure spreads from running services into deploys. That is exactly how it broke
+on 2026-07-26, with three modules stuck in a state no re-deploy could fix.
+
+**Before raising `DB_POOL_SIZE`** on any service, redo the arithmetic above and check it still
+clears 60 with room for db-init. A team that quietly raises its own pool is spending everyone
+else's headroom. Check the live number any time with:
+
+```
+SHOW STATUS LIKE 'Threads_connected';      -- right now
+SHOW STATUS LIKE 'Max_used_connections';   -- high-water mark since restart
+```
+
+If `Max_used_connections` is near 60, something is over budget.
+
+---
+
 ## Database bootstrap (why it's split)
 
 RDS has no `MYSQL_USER`, and its master may not `GRANT ... ON *.*`. So:
