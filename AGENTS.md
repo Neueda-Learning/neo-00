@@ -55,7 +55,7 @@ absent modules simply time out.
     copied by `scripts/sync-design-system.sh`, with `--check` gating CI — because app code lives
     inside it. Fix it here; an edited copy is reported and overwritten on the next sync.
 11. **The mock orchestrator is NOT in this repo, and must not be moved into it.** It lives in
-    `github.com/gjavolce/neobank-sidecar` and module repos build it as a git build context. A git
+    `github.com/Neueda-Learning/neobank-sidecar` and module repos build it as a git build context. A git
     context clones submodules recursively, so the `neo-01` submodule's SSH URL makes any
     subdirectory of this repo unusable as one — the failure is a bare
     `Please make sure you have the correct access rights`, which reads like a permissions

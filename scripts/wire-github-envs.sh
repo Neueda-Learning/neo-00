@@ -16,7 +16,7 @@
 # roles stacks rather than trusting a list pasted in here).
 set -euo pipefail
 
-OWNER=gjavolce
+OWNER=Neueda-Learning
 REGION="${AWS_REGION:-ap-southeast-1}"
 REPOS=(neo-00 neo-01 neo-02 neo-03 neo-04 neo-05 neo-06 neo-07 neo-08 neo-09 neo-10)
 

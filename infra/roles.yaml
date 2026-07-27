@@ -17,7 +17,7 @@ Description: >-
   Deployed once per environment from a laptop with admin, AFTER platform.yaml.
 
   ADDING A TEAM = one line in the Repos mapping below (the numeric repo id comes from
-  `gh api repos/gjavolce/<repo> --jq .id`) plus its slot in the two ForEach lists, then
+  `gh api repos/Neueda-Learning/<repo> --jq .id`) plus its slot in the two ForEach lists, then
   redeploy. This file used to carry one 60-line copy-pasted block per repo and predicted, in
   its own comment, that at ten teams it should become a loop. This is that loop.
 
@@ -35,8 +35,8 @@ Parameters:
 Mappings:
   Constants:
     github:
-      owner: gjavolce
-      ownerId: "2445600"
+      owner: Neueda-Learning
+      ownerId: "294232929"
 
   # Slot key → the repo it trusts, that repo's numeric id, and the ONE service stack it may
   # deploy.
@@ -44,26 +44,31 @@ Mappings:
   # Slot keys carry no hyphen (neo00, not neo-00) because they become part of a CloudFormation
   # LOGICAL ID, which must be alphanumeric. The real repo name is the `Repo` value.
   #
-  # RepoId is NOT decoration. This account has GitHub's immutable-ID subject format enabled,
+  # RepoId is NOT decoration. This org has GitHub's immutable-ID subject format enabled —
+  # measured, not assumed: a probe repo's token carried
+  #   repo:Neueda-Learning@294232929/neo-probe@1313716825:ref:refs/heads/main
   # so a token's `sub` reads
-  #   repo:gjavolce@2445600/neo-04@1312829121:ref:refs/heads/main
-  # and a trust policy matching only `repo:gjavolce/neo-04:*` can never match it. Both forms
-  # are listed below; getting this wrong costs a failed deploy whose message does not say so.
+  #   repo:Neueda-Learning@294232929/neo-04@1313981031:ref:refs/heads/main
+  # and a trust policy matching only `repo:Neueda-Learning/neo-04:*` can never match it. Both
+  # forms are listed below; getting this wrong costs a failed deploy whose message does not say so.
+  #
+  # These ids changed on 2026-07-27 when the repos moved from gjavolce into the org: a repo id
+  # is per-repository, and these are new repositories, not transferred ones.
   #
   # Stack is the last segment of neobank-<env>-<Stack>. Note neo-00's is `orchestrator`, not
   # `neo-00`: it matches ServiceName in its infra/env/*.params, not its repository name.
   Repos:
-    neo00: { Repo: "neo-00", RepoId: "1312828683", Stack: "orchestrator" }
-    neo01: { Repo: "neo-01", RepoId: "1312828800", Stack: "neo-01" }
-    neo02: { Repo: "neo-02", RepoId: "1312828871", Stack: "neo-02" }
-    neo03: { Repo: "neo-03", RepoId: "1312828940", Stack: "neo-03" }
-    neo04: { Repo: "neo-04", RepoId: "1312829121", Stack: "neo-04" }
-    neo05: { Repo: "neo-05", RepoId: "1312829253", Stack: "neo-05" }
-    neo06: { Repo: "neo-06", RepoId: "1312829329", Stack: "neo-06" }
-    neo07: { Repo: "neo-07", RepoId: "1312829416", Stack: "neo-07" }
-    neo08: { Repo: "neo-08", RepoId: "1312829574", Stack: "neo-08" }
-    neo09: { Repo: "neo-09", RepoId: "1312829675", Stack: "neo-09" }
-    neo10: { Repo: "neo-10", RepoId: "1312829764", Stack: "neo-10" }
+    neo00: { Repo: "neo-00", RepoId: "1313980542", Stack: "orchestrator" }
+    neo01: { Repo: "neo-01", RepoId: "1313980657", Stack: "neo-01" }
+    neo02: { Repo: "neo-02", RepoId: "1313980777", Stack: "neo-02" }
+    neo03: { Repo: "neo-03", RepoId: "1313980897", Stack: "neo-03" }
+    neo04: { Repo: "neo-04", RepoId: "1313981031", Stack: "neo-04" }
+    neo05: { Repo: "neo-05", RepoId: "1313981146", Stack: "neo-05" }
+    neo06: { Repo: "neo-06", RepoId: "1313981253", Stack: "neo-06" }
+    neo07: { Repo: "neo-07", RepoId: "1313981377", Stack: "neo-07" }
+    neo08: { Repo: "neo-08", RepoId: "1313981479", Stack: "neo-08" }
+    neo09: { Repo: "neo-09", RepoId: "1313981584", Stack: "neo-09" }
+    neo10: { Repo: "neo-10", RepoId: "1313981709", Stack: "neo-10" }
 
 Resources:
 

@@ -1,7 +1,7 @@
 # THE SYSTEM STACK: one MySQL + the orchestrator + all TEN modules, each with its own UI.
 # 23 containers, one command, no cloud and no internet needed once the images are built.
 #
-#   git clone --recurse-submodules https://github.com/gjavolce/neo-00.git
+#   git clone --recurse-submodules https://github.com/Neueda-Learning/neo-00.git
 #   cd neo-00 && docker compose up --build
 #   → http://localhost:3000   the orchestrator: the board, the journey, start/stop
 #   → http://localhost:3001   module 01's operator UI … 3010 for module 10

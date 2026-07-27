@@ -27,21 +27,21 @@ repository with its own history, CI and AWS service.
 
 | # | Module | Domain | Repo |
 |---|--------|--------|------|
-| 1 | Application Verification | `verification` | [neo-01](https://github.com/gjavolce/neo-01) |
-| 2 | Customer Policy | `policy` | [neo-02](https://github.com/gjavolce/neo-02) |
-| 3 | Identity Verification (KYC) | `kyc` | [neo-03](https://github.com/gjavolce/neo-03) |
-| 4 | Fraud & AML Screening | `screening` | [neo-04](https://github.com/gjavolce/neo-04) |
-| 5 | Credit Decisioning | `credit` | [neo-05](https://github.com/gjavolce/neo-05) |
-| 6 | Agreement Management | `agreement` | [neo-06](https://github.com/gjavolce/neo-06) |
-| 7 | Card Account Setup | `account` | [neo-07](https://github.com/gjavolce/neo-07) |
-| 8 | Card Issuing | `card` | [neo-08](https://github.com/gjavolce/neo-08) |
-| 9 | Customer Support | `support` | [neo-09](https://github.com/gjavolce/neo-09) |
-| 10 | Portfolio & Regulatory Analytics | `analytics` | [neo-10](https://github.com/gjavolce/neo-10) |
+| 1 | Application Verification | `verification` | [neo-01](https://github.com/Neueda-Learning/neo-01) |
+| 2 | Customer Policy | `policy` | [neo-02](https://github.com/Neueda-Learning/neo-02) |
+| 3 | Identity Verification (KYC) | `kyc` | [neo-03](https://github.com/Neueda-Learning/neo-03) |
+| 4 | Fraud & AML Screening | `screening` | [neo-04](https://github.com/Neueda-Learning/neo-04) |
+| 5 | Credit Decisioning | `credit` | [neo-05](https://github.com/Neueda-Learning/neo-05) |
+| 6 | Agreement Management | `agreement` | [neo-06](https://github.com/Neueda-Learning/neo-06) |
+| 7 | Card Account Setup | `account` | [neo-07](https://github.com/Neueda-Learning/neo-07) |
+| 8 | Card Issuing | `card` | [neo-08](https://github.com/Neueda-Learning/neo-08) |
+| 9 | Customer Support | `support` | [neo-09](https://github.com/Neueda-Learning/neo-09) |
+| 10 | Portfolio & Regulatory Analytics | `analytics` | [neo-10](https://github.com/Neueda-Learning/neo-10) |
 
 ## Run it
 
 ```bash
-git clone --recurse-submodules https://github.com/gjavolce/neo-00.git
+git clone --recurse-submodules https://github.com/Neueda-Learning/neo-00.git
 cd neo-00
 docker compose up --build
 ```
@@ -241,7 +241,7 @@ diverges.
 `make-modules.sh` is `--check` only: a regenerate would overwrite a team's work.
 
 **The mock orchestrator is not in here.** It lives in its own repo,
-[`gjavolce/neobank-sidecar`](https://github.com/gjavolce/neobank-sidecar), which each module
+[`Neueda-Learning/neobank-sidecar`](https://github.com/Neueda-Learning/neobank-sidecar), which each module
 repo builds directly as a Docker build context — so there is exactly one copy of it in the
 world and no team maintains it. (The submodules below are HTTPS, so a git build context
 *could* now reach them; the sidecar stays separate for the reason it left in the first place,
