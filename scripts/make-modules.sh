@@ -176,7 +176,15 @@ for spec in "${MODULES[@]}"; do
     fi
     out=""
     for p in "${targets[@]}"; do
-      out+="$(diff -r -q --exclude '.git' --exclude 'target' --exclude 'node_modules' \
+      # -I '^Team=' : infra/env/*.params is checked because DbName, PathPrefix and
+      # ListenerRulePriority MUST NOT diverge — two modules claiming one priority fails the
+      # second deploy. But the same file also carries `Team=`, which is the team's own name
+      # for itself and is *meant* to be edited (its own comment says "Whose module this is.
+      # Shown in the UI's identity box."). The generator can only ever produce `Team NN`, so
+      # any team that names itself would trip a gate about deploy config — and a gate that
+      # fires on legitimate work is a gate someone switches off, taking the useful half with
+      # it. Ignore that one line; everything else in the file is still compared.
+      out+="$(diff -r -q -I '^Team=' --exclude '.git' --exclude 'target' --exclude 'node_modules' \
                 --exclude 'dist' "$tmp/neo-$nn/$p" "$dest/$p" 2>&1 || true)"
     done
     if [ -z "$out" ]; then
