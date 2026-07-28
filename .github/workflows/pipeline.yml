@@ -65,23 +65,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: frontend } }
     steps:
-      # submodules: recursive is LOAD-BEARING, not tidiness. The drift check below SKIPS any
-      # module whose frontend/ is not on disk, so a plain checkout (zero submodules) makes it
-      # skip all ten and report success while proving nothing — a green gate that checks
-      # nothing is worse than no gate, because it is believed.
+      # A plain checkout: no submodules. This job builds neo-00's own UI and nothing else.
+      # It used to need `submodules: recursive` because two drift gates here read all ten
+      # module repos — the design system had to be byte-identical in eleven frontends, and
+      # the nine clones had to still be neo-01 stamped with their own identity. Both gates
+      # were REMOVED on 2026-07-28: the teams own their repos, and neo-00 no longer verifies
+      # anything inside them. Nothing left in this pipeline reads a module's working tree,
+      # so a recursive checkout is now pure cost.
       - uses: actions/checkout@v4
-        with: { submodules: recursive }
-      # The design system is a vendored folder, not a package (ui-kit/README.md says
-      # why). A vendored folder with no drift check is eleven slowly diverging design
-      # systems, so this gate is the thing that makes the copy safe.
-      - name: Design system has not drifted in any of the eleven frontends
-        working-directory: .
-        run: ./scripts/sync-design-system.sh --check
-      # Same argument, different artefact: the nine cloned modules must still be neo-01
-      # stamped with their own identity. This is what notices someone "fixing" a clone.
-      - name: The nine cloned modules have not drifted from neo-01
-        working-directory: .
-        run: ./scripts/make-modules.sh --check
       - uses: actions/setup-node@v4
         with: { node-version: "20", cache: npm, cache-dependency-path: frontend/package-lock.json }
       - run: npm ci

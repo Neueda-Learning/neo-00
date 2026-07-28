@@ -215,30 +215,25 @@ neo-00/
 ├── frontend/               the two screens (React + Vite, nginx)
 ├── db/init/                the eleven-schema list (laptop only; AWS is per-deploy)
 ├── infra/                  the AWS environment, as CloudFormation
-├── ui-kit/                 canonical design system, VENDORED into each frontend
+├── ui-kit/                 the design system this repo's frontend vendors
 ├── scripts/
-│   ├── sync-design-system.sh   push ui-kit into all 11 frontends · --check for CI
-│   ├── make-modules.sh         stamp neo-02…neo-10 from neo-01 · --check for CI
-│   └── stamp.py                the ordered literal replacer it uses
+│   └── wire-github-envs.sh     set the eleven repos' Actions secrets/variables
 └── neo-01/ … neo-10/       submodules — one per team
 ```
 
 Each repo owns its own MySQL schema (`neo_00` … `neo_10`) and never reads another's — they
 integrate over REST, not through shared tables.
 
-Two vendored artefacts, two drift gates, same reasoning: a copy nobody checks is a copy that
-diverges.
+**neo-00 does not verify anything inside a module repo.** It did once: `ui-kit/` was vendored
+into all eleven frontends and checked byte-identical, and `neo-02` … `neo-10` were generated
+from `neo-01` and checked to still be that skeleton stamped with their own identity. Both
+gates, and the scripts behind them, were removed on **2026-07-28** — the ten repos are handed
+over and the teams own them, so a top-level check can only fail on work the teams were asked
+to do. The teams' contract with this repo is the API in `api-contract.md` and the deploy
+params in their own `infra/`, not the shape of their source tree.
 
-* `ui-kit/` is vendored into all eleven frontends by `scripts/sync-design-system.sh`. It
-  cannot be an npm package: module repos are separate repos, the Docker build context is
-  `frontend/`, and the stack must build offline.
-* `neo-02` … `neo-10` are **generated from `neo-01`** by `scripts/make-modules.sh`. The ten
-  modules are difficulty-equalised copies of one skeleton, and nine hand-maintained near-copies
-  diverge within a day — at which point no two teams have the same starting point, which is
-  the one thing the design must guarantee.
-
-**Fix `ui-kit/` and `neo-01`, never a copy.** After the repos are handed to teams,
-`make-modules.sh` is `--check` only: a regenerate would overwrite a team's work.
+`ui-kit/` remains the design system **this** frontend uses, and each module has its own copy
+free to diverge.
 
 **The mock orchestrator is not in here.** It lives in its own repo,
 [`Neueda-Learning/neobank-sidecar`](https://github.com/Neueda-Learning/neobank-sidecar), which each module

@@ -51,9 +51,10 @@ absent modules simply time out.
 8. **Schema isolation.** Each service owns one MySQL schema and reads no other.
 9. **The generator starts off.** The orchestrator calls services that call it back; firing
    at boot means firing at containers that aren't listening.
-10. **`ui-kit/` is shipped to module repos and never edited in a copy.** It is **vendored** —
-    copied by `scripts/sync-design-system.sh`, with `--check` gating CI — because app code lives
-    inside it. Fix it here; an edited copy is reported and overwritten on the next sync.
+10. **`ui-kit/` is this repo's design system, and each module owns its own copy.** It was once
+    vendored into all eleven frontends and held byte-identical by a CI gate; that gate and its
+    script were removed on 2026-07-28 along with every other top-level check on a module repo.
+    Fix `ui-kit/` for this frontend. A module's copy is that team's to change.
 11. **The mock orchestrator is NOT in this repo, and must not be moved into it.** It lives in
     `github.com/Neueda-Learning/neobank-sidecar` and module repos build it as a git build context. A git
     context clones submodules recursively, so the `neo-01` submodule's SSH URL makes any
