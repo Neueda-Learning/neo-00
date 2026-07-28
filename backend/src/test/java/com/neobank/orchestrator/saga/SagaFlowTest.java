@@ -68,13 +68,14 @@ class SagaFlowTest {
     }
 
     @Test
-    void tenAcceptancesCompleteTheJourney() {
+    void acceptancesFromEveryStepCompleteTheJourney() {
         String id = startAndAwaitDispatch();
 
-        for (int step = 1; step <= 10; step++) {
+        int last = store.serviceSummaries().size();
+        for (int step = 1; step <= last; step++) {
             engine.handleApplicationStatusUpdate(id,
                     new ApplicationStatusUpdate(serviceIdOf(step), "ACCEPTED", "ok"));
-            if (step < 10) {
+            if (step < last) {
                 awaitDispatchOf(id, step + 1);
             }
         }

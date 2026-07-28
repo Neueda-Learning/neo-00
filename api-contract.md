@@ -20,13 +20,18 @@ neo-00 ──POST /api/v1/applications──▶ neo-01
             ◀──PUT /api/v1/applications/{id}    {status: ACCEPTED}
    wait 1s
        ──POST /api/v1/applications──▶ neo-02
-            … and so on through neo-10, or until someone does not say ACCEPTED
+            … and so on through neo-08, or until someone does not say ACCEPTED
 ```
 
 The sequence itself is a list in the orchestrator's `application.yml`; environments override
 only the base URLs. A module never learns its own step number and must not depend on one —
 the order is exchangeable, and every module receives the **whole application** and reads the
 fields it needs.
+
+**The journey is eight steps: `neo-01` … `neo-08`.** `neo-09` and `neo-10` are the analytical
+modules — they observe the journey rather than sit in it, so the orchestrator never dispatches
+to them and they never receive a `POST /api/v1/applications`. They read the journey instead;
+see §5.
 
 - The orchestrator dispatches **one service at a time** and **waits for the status update**
   before moving on — the `202` only acknowledges receipt.

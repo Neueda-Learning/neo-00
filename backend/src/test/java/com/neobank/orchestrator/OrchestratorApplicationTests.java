@@ -51,20 +51,30 @@ class OrchestratorApplicationTests {
     }
 
     @Test
-    void infoReportsTheTenStepSequence() throws Exception {
+    void infoReportsTheEightStepSequence() throws Exception {
         mvc.perform(get("/info"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.steps").value(10))
-                .andExpect(jsonPath("$.sequence", hasSize(10)))
+                .andExpect(jsonPath("$.steps").value(8))
+                .andExpect(jsonPath("$.sequence", hasSize(8)))
                 .andExpect(jsonPath("$.sequence[0].serviceId").value("neo01"))
-                .andExpect(jsonPath("$.sequence[9].serviceId").value("neo10"));
+                .andExpect(jsonPath("$.sequence[7].serviceId").value("neo08"));
     }
 
     @Test
-    void servicesScreenListsAllTenBoxesEvenBeforeAnyTraffic() throws Exception {
+    void theTwoAnalyticalModulesAreNotInTheJourney() throws Exception {
+        // neo09 and neo10 observe the journey rather than sit in it, so the orchestrator
+        // never dispatches to them and they are absent from every sequence view. They still
+        // deploy and serve their own UIs — this asserts only that the saga ignores them.
+        mvc.perform(get("/info"))
+                .andExpect(jsonPath("$.sequence[*].serviceId")
+                        .value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItems("neo09", "neo10"))));
+    }
+
+    @Test
+    void servicesScreenListsAllEightBoxesEvenBeforeAnyTraffic() throws Exception {
         mvc.perform(get("/api/v1/services"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(10)))
+                .andExpect(jsonPath("$", hasSize(8)))
                 .andExpect(jsonPath("$[0].serviceId").value("neo01"))
                 .andExpect(jsonPath("$[0].step").value(1));
     }
@@ -108,11 +118,11 @@ class OrchestratorApplicationTests {
         mvc.perform(get("/api/v1/applications"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.id=='" + id + "')]", hasSize(1)))
-                // steps[*] flattens the matched row's ten StepViews; steps[0] would give
+                // steps[*] flattens the matched row's eight StepViews; steps[0] would give
                 // the first one, not the array.
-                .andExpect(jsonPath("$[?(@.id=='" + id + "')].steps[*]", hasSize(10)))
+                .andExpect(jsonPath("$[?(@.id=='" + id + "')].steps[*]", hasSize(8)))
                 .andExpect(jsonPath("$[?(@.id=='" + id + "')].steps[*].serviceId")
-                        .value(org.hamcrest.Matchers.hasItems("neo01", "neo10")));
+                        .value(org.hamcrest.Matchers.hasItems("neo01", "neo08")));
     }
 
     @Test

@@ -148,9 +148,12 @@ a team pushes ──▶ ghcr.io ──▶ its own OIDC role ──▶ its own st
 
 ## The journey
 
-`backend/src/main/resources/application.yml` declares the sequence — ten steps, with each
+`backend/src/main/resources/application.yml` declares the sequence — **eight** steps, with each
 module's `serviceId`, display name and base URL. That file is the **one** place the journey
-is defined. Everything else only overrides the URLs:
+is defined. `neo-09` (Customer Support) and `neo-10` (Portfolio & Regulatory Analytics) are
+the two analytical modules: they observe the journey rather than sit in it, so they are not
+dispatched to and do not appear on the Services screen — they still run with their own UIs.
+Everything else only overrides the URLs:
 
 * `docker-compose.yml` points them at compose service names (`http://neo-04:8080`);
 * the ECS task definition points them at Cloud Map (`http://neo-04.neobank-dev.local:8080`),
@@ -189,7 +192,7 @@ dispatch step N → 202 ack → module decides off-thread → PUT status → ste
 - The orchestrator **waits for the status update**, not the `202`. The `202` only means
   *received* — it is an acknowledgement, not an answer.
 - **Only `ACCEPTED` advances.** `REJECTED` and `REFERRED` end the journey where they happen,
-  so a rejection at step 2 means steps 3–10 are never called. A module may say so in its own
+  so a rejection at step 2 means steps 3–8 are never called. A module may say so in its own
   brief's word — `PASSED`, `CLEAR`, `SIGNED`, `OPENED` — which `StatusVocabulary` translates;
   `api-contract.md` §3 has the table. `IN_PROGRESS`/`PENDING` do neither: the journey waits.
 - No answer within `CALLBACK_TIMEOUT` (30s) → the step is logged `TIMEOUT` and the
