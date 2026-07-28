@@ -190,7 +190,9 @@ refuse the request with a `400`.
 |---|---|
 | `POST /api/v1/applications` | create one application now (body optional — a fixture is generated) |
 | `GET /api/v1/applications` | board rows: id, applicant, product, ten step statuses, overall |
-| `GET /api/v1/applications/{id}` | one application + its full append-only event log |
+| `GET /api/v1/applications?name=` | **§4 application objects** whose applicant name contains `name` (substring, case-insensitive; blank matches nothing) |
+| `GET /api/v1/applications/{id}` | **the §4 application object** — the same one the dispatch envelope carries. `404` if unknown |
+| `GET /api/v1/applications/{id}/journey` | the board row + the application + its full append-only event log |
 | `GET /api/v1/events?serviceId=&limit=` | the event log filtered to one service |
 | `GET /api/v1/services` | per service: in-progress count + count per status |
 | `GET /api/v1/generator` · `POST /api/v1/generator` | the start/stop toggle `{enabled, intervalMs}` |
@@ -198,6 +200,24 @@ refuse the request with a `400`.
 | `GET /health` · `GET /info` | ops |
 
 Overall application status ∈ `IN_PROGRESS · COMPLETED · REJECTED · REFERRED · FAILED`.
+
+### Reading an application back (what a service may call)
+
+Most of the table above is the front end's business, but two rows are not:
+**`GET /api/v1/applications/{id}`** and **`?name=`** are there for the ten services. A module that
+needs applicant data it correctly did not store locally reads it here, live, and stores nothing.
+
+Both answer in the **§4 application object** — identical to the `application` field of the dispatch
+envelope. One object, two ways to get it: pushed to you, or pulled by you. That is the whole point;
+if the pulled copy had a different shape, it would be a second contract to keep in step.
+
+The **sidecar serves both**, byte for byte, so the flow is testable on one laptop.
+
+> ⚠️ **One URL, two shapes.** `GET /api/v1/applications` returns *board rows* bare and *application
+> objects* with `?name=`. That is a wart. The bare collection is a UI view that predates the
+> search; making the collection contract-shaped means moving the board to its own path, which is
+> not worth breaking the board screen for mid-hackathon. Read `{id}` and `?name=` as the contract
+> surface and the bare list as the front end's.
 
 Every dispatch, ack, status update, timeout and journey transition is appended to
 `application_event` and **never updated or deleted** — that table is the system of record.

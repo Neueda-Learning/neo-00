@@ -93,6 +93,18 @@ public final class SagaDtos {
         }
     }
 
+    /**
+     * The journey view of one application: the board row, the application itself, and the full
+     * append-only event log. Served at {@code GET /api/v1/applications/{id}/journey} and read by
+     * this orchestrator's own front end.
+     *
+     * <p><b>Not what a service gets.</b> {@code GET /api/v1/applications/{id}} returns the bare §4
+     * application object — see {@link SagaStore#application(String)} for why.</p>
+     *
+     * <p>{@code application} is a parsed object, not the raw {@code payloadJson} string it used to
+     * be. Handing a client JSON-inside-a-JSON-string makes every caller parse twice and is the
+     * same cleanup already made on the module side's {@code RequestView}.</p>
+     */
     public record ApplicationDetail(
             String id,
             String applicantName,
@@ -101,15 +113,16 @@ public final class SagaDtos {
             String channel,
             int currentStep,
             String overallStatus,
-            String payloadJson,
+            Map<String, Object> application,
             Instant createdAt,
             Instant updatedAt,
             List<EventView> events) {
 
-        public static ApplicationDetail of(Application a, List<ApplicationEvent> events) {
+        public static ApplicationDetail of(Application a, Map<String, Object> application,
+                                           List<ApplicationEvent> events) {
             return new ApplicationDetail(
                     a.getId(), a.getApplicantName(), a.getProductCode(), a.getRequestedLimit(),
-                    a.getChannel(), a.getCurrentStep(), a.getOverallStatus(), a.getPayloadJson(),
+                    a.getChannel(), a.getCurrentStep(), a.getOverallStatus(), application,
                     a.getCreatedAt(), a.getUpdatedAt(),
                     events.stream().map(EventView::from).toList());
         }

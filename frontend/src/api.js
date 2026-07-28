@@ -27,7 +27,10 @@ export const api = {
 
   board: (limit = 200) => request(`/api/v1/applications?limit=${limit}`),
   summary: () => request('/api/v1/applications/summary'),
-  application: (id) => request(`/api/v1/applications/${id}`),
+  // The journey view: board row + application + the full event log. The bare
+  // /applications/{id} is the api-contract §4 application object, which the ten
+  // services read — this screen wants the events too.
+  journey: (id) => request(`/api/v1/applications/${id}/journey`),
   // Backoffice "+ one": no body, the orchestrator generates a fixture applicant.
   createApplication: () => request('/api/v1/applications', { method: 'POST' }),
   // Customer journey: the attendee's filled-in Application object (api-contract §4 shape).

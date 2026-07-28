@@ -244,10 +244,46 @@ public class SagaStore {
                 .toList();
     }
 
+    /**
+     * The application itself, as the api-contract §4 object — byte for byte the same shape the
+     * dispatch envelope carries in its {@code application} field.
+     *
+     * <p>This is what a service gets from {@code GET /api/v1/applications/{id}}, and it is
+     * deliberately <em>not</em> {@link SagaDtos.ApplicationDetail}. A service asking for an
+     * application wants the application; the board row and the event log are this orchestrator's
+     * own view of the journey and live at {@code /{id}/journey}. One object, two ways to get it:
+     * pushed in the envelope, or pulled by id.</p>
+     */
+    @Transactional(readOnly = true)
+    public Optional<Map<String, Object>> application(String id) {
+        return applications.findById(id).map(a -> readPayload(a.getPayloadJson()));
+    }
+
+    /**
+     * Applications whose applicant name <em>contains</em> {@code name}, newest first, each as the
+     * same §4 object {@link #application(String)} returns.
+     *
+     * <p>Substring and case-insensitive on purpose: this backs an operator typing a name into a
+     * search box, not an exact-match lookup. A blank query matches nothing rather than everything —
+     * returning the whole book because someone tabbed through a field is not a search result.</p>
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> applicationsByName(String name, int limit) {
+        if (name == null || name.isBlank()) {
+            return List.of();
+        }
+        return applications.findByApplicantNameContainingIgnoreCaseOrderByCreatedAtDesc(
+                        name.strip(), org.springframework.data.domain.Limit.of(limit))
+                .stream()
+                .map(a -> readPayload(a.getPayloadJson()))
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public Optional<SagaDtos.ApplicationDetail> detail(String id) {
         return applications.findById(id)
-                .map(a -> SagaDtos.ApplicationDetail.of(a, events.findByApplicationIdOrderByIdAsc(id)));
+                .map(a -> SagaDtos.ApplicationDetail.of(a, readPayload(a.getPayloadJson()),
+                        events.findByApplicationIdOrderByIdAsc(id)));
     }
 
     @Transactional(readOnly = true)
