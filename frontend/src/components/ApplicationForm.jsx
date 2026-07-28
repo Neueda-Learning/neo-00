@@ -128,28 +128,16 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
           src={CARD_IMAGES[product.accent]}
           alt={`Selected ${product.name}`}
         />
-        <p className="application-details__eyebrow">{product.name}</p>
         <h1>Let's get started</h1>
-        <p>Tell us about yourself to complete your application.</p>
       </header>
 
       <section className="application-benefits" aria-labelledby="application-benefits-title">
-        <div>
-          <p className="application-benefits__eyebrow">Your selected card</p>
-          <h2 id="application-benefits-title">More ways to earn</h2>
-        </div>
+        <h2 id="application-benefits-title">More ways to earn</h2>
         <ul>
           {product.features.map((feature) => (
-            <li key={feature}>
-              <span aria-hidden="true">✓</span>
-              {feature}
-            </li>
+            <li key={feature}>Complimentary {feature}</li>
           ))}
         </ul>
-        <p className="application-benefits__terms">
-          {product.apr}% representative APR · Credit limits from {money(product.minLimit)} to{' '}
-          {money(product.maxLimit)}
-        </p>
       </section>
 
       <div className="application-form">

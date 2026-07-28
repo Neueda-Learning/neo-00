@@ -350,14 +350,14 @@
 
 /* Customer application form */
 .customer-journey--form .ds-shell__main {
-  max-width: 1040px;
-  padding-top: 42px;
-  padding-bottom: 72px;
+  max-width: 1000px;
+  padding-top: 34px;
+  padding-bottom: 88px;
 }
 
 .application-details {
-  width: 100%;
-  max-width: 960px;
+  width: min(960px, max(640px, 50vw));
+  max-width: none;
   margin: 0 auto;
 }
 
@@ -370,100 +370,56 @@
 
 .application-details__card-image {
   display: block;
-  width: min(290px, 72vw);
+  width: min(180px, 56vw);
   height: auto;
 }
 
-.application-details__eyebrow {
-  margin-top: 12px;
-  color: #6d6d6d;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
 .application-details__hero h1 {
-  margin-top: 7px;
+  margin-top: 16px;
   color: #050505;
   font-family: var(--ds-font-sans);
-  font-size: clamp(38px, 5vw, 52px);
+  font-size: clamp(28px, 2.7vw, 32px);
   font-weight: 600;
-  letter-spacing: -0.045em;
-  line-height: 1.05;
-}
-
-.application-details__hero > p:last-child {
-  margin-top: 10px;
-  color: #666666;
-  font-size: 15px;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
 }
 
 .application-benefits {
-  display: grid;
-  grid-template-columns: minmax(210px, 0.8fr) minmax(0, 1.2fr);
-  gap: 18px 46px;
-  margin-top: 38px;
-  padding: 30px 34px;
-  border: 1px solid #e5e0c4;
-  border-left: 5px solid #ffd400;
-  border-radius: 8px;
-  background: #f7f5e9;
-}
-
-.application-benefits__eyebrow {
-  margin-bottom: 6px;
-  color: #75660a;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  margin-top: 24px;
+  padding: 22px 24px 24px;
+  border-radius: 6px;
+  background: #f1f2f4;
 }
 
 .application-benefits h2 {
   color: #0a0a0a;
   font-family: var(--ds-font-sans);
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.015em;
 }
 
 .application-benefits ul {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 7px;
+  margin-top: 12px;
   color: #1c1c1c;
-  font-size: 15px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .application-benefits li {
-  display: flex;
-  align-items: baseline;
-  gap: 11px;
-}
-
-.application-benefits li span {
-  color: #c6a600;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.application-benefits__terms {
-  grid-column: 1 / -1;
-  margin-top: 2px;
-  padding-top: 16px;
-  border-top: 1px solid #ddd6ae;
-  color: #595959;
-  font-size: 13px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #d9dade;
 }
 
 .application-form {
-  margin-top: 46px;
+  margin-top: 42px;
 }
 
 .application-form__section {
-  padding: 34px 0 38px;
+  padding: 27px 0 31px;
   border-top: 1px solid #d8d8d8;
 }
 
@@ -475,7 +431,7 @@
 .application-form__section h2 {
   color: #0a0a0a;
   font-family: var(--ds-font-sans);
-  font-size: 25px;
+  font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.025em;
 }
@@ -483,8 +439,8 @@
 .application-form__row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 34px 64px;
-  margin-top: 27px;
+  gap: 28px 36px;
+  margin-top: 23px;
 }
 
 .application-details .ds-field {
@@ -493,7 +449,7 @@
 
 .application-details .ds-field__label {
   color: #484848;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
@@ -510,14 +466,14 @@
 
 .application-details .ds-input,
 .application-details .ds-select {
-  height: 46px;
+  height: 42px;
   padding: 0 3px;
   border: 0;
   border-bottom: 1px solid #9d9d9d;
   border-radius: 0;
   background-color: transparent;
   color: #101010;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .application-details .ds-select {
@@ -548,7 +504,7 @@
 .application-form__notice {
   padding: 17px 20px;
   border-left: 4px solid #ffd400;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .application-form__guidance {
@@ -572,13 +528,13 @@
 
 .application-form__guidance h3 {
   color: #111111;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 600;
 }
 
 .application-form__guidance p {
   margin-top: 5px;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -588,7 +544,7 @@
 
 .application-form__consent .ds-check {
   align-items: flex-start;
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .application-form__consent .ds-check input {
@@ -607,10 +563,10 @@
 }
 
 .application-form__actions .ds-btn--primary {
-  min-width: 196px;
-  min-height: 50px;
+  min-width: 172px;
+  min-height: 43px;
   border-radius: 5px;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -634,12 +590,8 @@
     gap: 68px;
   }
 
-  .application-benefits {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .application-benefits__terms {
-    grid-column: auto;
+  .application-details {
+    width: min(640px, calc(100% - 32px));
   }
 }
 
@@ -650,7 +602,7 @@
   }
 
   .application-benefits {
-    padding: 25px 23px;
+    padding: 24px 22px 26px;
   }
 
   .application-form__actions {
@@ -690,11 +642,11 @@
   }
 
   .application-details__card-image {
-    width: min(250px, 78vw);
+    width: min(170px, 64vw);
   }
 
   .application-details__hero h1 {
-    font-size: 38px;
+    font-size: 28px;
   }
 
   .application-benefits {
