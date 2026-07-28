@@ -34,6 +34,15 @@ public class ApplicationEvent {
     public static final String DISPATCH_FAILED = "DISPATCH_FAILED";
     /** The service reported its decision. */
     public static final String CALLBACK = "CALLBACK";
+    /**
+     * The service reported that it is still working — the journey neither advances nor ends.
+     *
+     * <p>Deliberately not a {@link #CALLBACK}: the board and the service summary both treat a
+     * callback as the end of a wait, so a progress report recorded as one would overwrite the
+     * step's in-flight dot and drop the application out of the running count. A module honestly
+     * reporting progress would erase itself from the screen that exists to show it.</p>
+     */
+    public static final String PROGRESS_REPORTED = "PROGRESS_REPORTED";
     /** No callback arrived within the timeout. */
     public static final String TIMEOUT = "TIMEOUT";
     /** The journey reached a terminal state. */
@@ -55,7 +64,9 @@ public class ApplicationEvent {
     @Column(name = "event_type", nullable = false, length = 24)
     private String eventType;
 
-    @Column(length = 24)
+    private static final int STATUS_MAX = 24;
+
+    @Column(length = STATUS_MAX)
     private String status;
 
     @Column(length = 500)
@@ -74,7 +85,7 @@ public class ApplicationEvent {
         this.stepIndex = stepIndex;
         this.serviceId = serviceId;
         this.eventType = eventType;
-        this.status = status;
+        this.status = cap(status);
         this.comment = truncate(comment);
     }
 
@@ -83,6 +94,19 @@ public class ApplicationEvent {
         if (createdAt == null) {
             createdAt = Instant.now();
         }
+    }
+
+    /**
+     * A status the orchestrator does not recognise is stored exactly as the module sent it, so
+     * this column now carries arbitrary module input. A word longer than the column would throw
+     * on insert and turn the module's report into a 500 — losing the one clue an operator has.
+     * No ellipsis, unlike a comment: a status is a token, and three of twenty-four characters is
+     * too much to spend on punctuation.
+     */
+    private static String cap(String status) {
+        return status == null || status.length() <= STATUS_MAX
+                ? status
+                : status.substring(0, STATUS_MAX);
     }
 
     /** Comments carry exception messages, which can be far longer than the column. */

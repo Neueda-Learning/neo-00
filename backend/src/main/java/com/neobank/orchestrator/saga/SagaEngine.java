@@ -28,8 +28,11 @@ import org.springframework.web.client.RestClient;
  * freely — several are in flight at different steps at any moment — while each individual one stays
  * sequential.</p>
  *
- * <p>Only {@code ACCEPTED} advances. {@code REJECTED} and {@code REFERRED} end the journey
- * where they happen, so the remaining steps are never dispatched.</p>
+ * <p>Only a status that resolves to {@code ACCEPTED} advances — each module may say so in its own
+ * word ({@code PASSED}, {@code CLEAR}, {@code SIGNED}, {@code OPENED}…), which
+ * {@link StatusVocabulary} translates. {@code REJECTED} and {@code REFERRED} end the journey where
+ * they happen, so the remaining steps are never dispatched. {@code IN_PROGRESS} does neither: the
+ * journey keeps waiting.</p>
  */
 @Service
 public class SagaEngine {
@@ -67,6 +70,10 @@ public class SagaEngine {
      *
      * <p>The application id arrives as a parameter rather than on the body: it comes from the URL of
      * the {@code PUT} that carried the update.</p>
+     *
+     * <p>{@code Advance} is the only outcome with anything left to do here. {@code Finished},
+     * {@code Waiting} and {@code Ignored} are all deliberate no-ops — the store has already
+     * recorded them, and none of the three has a next step to send.</p>
      */
     public void handleApplicationStatusUpdate(String applicationId, ApplicationStatusUpdate update) {
         CallbackOutcome outcome = store.recordApplicationStatusUpdate(applicationId, update);
