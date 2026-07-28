@@ -18,6 +18,10 @@ export const stepTone = toneMapper(
     REJECTED: TONES.NEGATIVE,
     REFERRED: TONES.WARNING,
     TIMEOUT: TONES.NEGATIVE,
+    // Colours the event-log badge on a PROGRESS_REPORTED row — a service saying it is still
+    // working. No board dot can carry it: the orchestrator records progress under its own event
+    // type precisely so the step's in-flight dot survives.
+    IN_PROGRESS: TONES.INFO,
   },
   TONES.NEUTRAL
 );

@@ -189,7 +189,9 @@ dispatch step N → 202 ack → module decides off-thread → PUT status → ste
 - The orchestrator **waits for the status update**, not the `202`. The `202` only means
   *received* — it is an acknowledgement, not an answer.
 - **Only `ACCEPTED` advances.** `REJECTED` and `REFERRED` end the journey where they happen,
-  so a rejection at step 2 means steps 3–10 are never called.
+  so a rejection at step 2 means steps 3–10 are never called. A module may say so in its own
+  brief's word — `PASSED`, `CLEAR`, `SIGNED`, `OPENED` — which `StatusVocabulary` translates;
+  `api-contract.md` §3 has the table. `IN_PROGRESS`/`PENDING` do neither: the journey waits.
 - No answer within `CALLBACK_TIMEOUT` (30s) → the step is logged `TIMEOUT` and the
   application ends `FAILED`. An answer arriving after that is recorded but cannot restart
   the journey.
