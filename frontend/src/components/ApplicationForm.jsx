@@ -2,16 +2,13 @@ import React, { useState } from 'react';
 import {
   Alert,
   Button,
-  Card,
   Checkbox,
   Field,
-  FormActions,
-  FormGrid,
-  PageHeader,
   Select,
-  Stack,
   TextInput,
 } from '../design-system';
+import platinumCardImage from '../assets/cards/neo-platinum-card.png';
+import premiumCardImage from '../assets/cards/neo-premium-card.png';
 import { money } from '../status.js';
 import { api } from '../api.js';
 
@@ -21,6 +18,10 @@ const RESIDENTIAL = ['OWNER', 'MORTGAGE', 'RENTING', 'LIVING_WITH_FAMILY', 'OTHE
 const EMPLOYMENT = ['PERMANENT', 'CONTRACT', 'SELF_EMPLOYED', 'STUDENT', 'RETIRED', 'UNEMPLOYED'];
 
 const readable = (v) => ({ value: v, label: v.replace(/_/g, ' ').toLowerCase() });
+const CARD_IMAGES = {
+  premium: premiumCardImage,
+  platinum: platinumCardImage,
+};
 
 // Sensible defaults so an attendee can submit in one click, or tweak anything first.
 const defaults = (product) => ({
@@ -120,19 +121,48 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
   }
 
   return (
-    <form onSubmit={submit}>
-      <PageHeader
-        title="Your details"
-        lede={`applying for the ${product.name}`}
-      />
+    <form className="application-details" onSubmit={submit}>
+      <header className="application-details__hero">
+        <img
+          className="application-details__card-image"
+          src={CARD_IMAGES[product.accent]}
+          alt={`Selected ${product.name}`}
+        />
+        <p className="application-details__eyebrow">{product.name}</p>
+        <h1>Let's get started</h1>
+        <p>Tell us about yourself to complete your application.</p>
+      </header>
 
-      <Stack gap={5}>
-        <Card title="About you">
-          <FormGrid cols={3}>
+      <section className="application-benefits" aria-labelledby="application-benefits-title">
+        <div>
+          <p className="application-benefits__eyebrow">Your selected card</p>
+          <h2 id="application-benefits-title">More ways to earn</h2>
+        </div>
+        <ul>
+          {product.features.map((feature) => (
+            <li key={feature}>
+              <span aria-hidden="true">✓</span>
+              {feature}
+            </li>
+          ))}
+        </ul>
+        <p className="application-benefits__terms">
+          {product.apr}% representative APR · Credit limits from {money(product.minLimit)} to{' '}
+          {money(product.maxLimit)}
+        </p>
+      </section>
+
+      <div className="application-form">
+        <section className="application-form__section" aria-labelledby="personal-info-title">
+          <h2 id="personal-info-title">Personal info</h2>
+
+          <div className="application-form__row">
             <Field label="Full name" required>
               {({ id }) => (
                 <TextInput
                   id={id}
+                  name="fullName"
+                  autoComplete="name"
                   value={f.fullName}
                   onChange={set('fullName')}
                   required
@@ -142,39 +172,118 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
             </Field>
             <Field label="Date of birth" required>
               {({ id }) => (
-                <TextInput id={id} type="date" value={f.dateOfBirth} onChange={set('dateOfBirth')} required />
+                <TextInput
+                  id={id}
+                  name="dateOfBirth"
+                  type="date"
+                  autoComplete="bday"
+                  value={f.dateOfBirth}
+                  onChange={set('dateOfBirth')}
+                  required
+                />
               )}
             </Field>
-            <Field label="Email" hint="left blank, we make one up">
-              {({ id }) => (
-                <TextInput id={id} type="email" value={f.email} onChange={set('email')} placeholder="optional" />
-              )}
-            </Field>
-            <Field label="Mobile">
-              {({ id }) => <TextInput id={id} value={f.mobile} onChange={set('mobile')} />}
-            </Field>
+          </div>
+
+          <div className="application-form__row">
             <Field label="Nationality">
               {({ id }) => (
-                <Select id={id} value={f.nationality} onChange={set('nationality')} options={COUNTRIES} />
+                <Select
+                  id={id}
+                  name="nationality"
+                  value={f.nationality}
+                  onChange={set('nationality')}
+                  options={COUNTRIES}
+                />
               )}
             </Field>
             <Field label="Country of residence">
               {({ id }) => (
                 <Select
                   id={id}
+                  name="countryOfResidence"
                   value={f.countryOfResidence}
                   onChange={set('countryOfResidence')}
                   options={COUNTRIES}
                 />
               )}
             </Field>
-            <Field label="Residential status">
+          </div>
+        </section>
+
+        <section className="application-form__section" aria-labelledby="contact-info-title">
+          <h2 id="contact-info-title">Contact info</h2>
+
+          <div className="application-form__row">
+            <Field label="Email address" hint="Left blank, we make one up">
               {({ id }) => (
-                <Select
+                <TextInput
                   id={id}
-                  value={f.residentialStatus}
-                  onChange={set('residentialStatus')}
-                  options={RESIDENTIAL.map(readable)}
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  value={f.email}
+                  onChange={set('email')}
+                  placeholder="ada@example.com"
+                />
+              )}
+            </Field>
+            <Field label="Phone number (mobile preferred)">
+              {({ id }) => (
+                <TextInput
+                  id={id}
+                  name="mobile"
+                  type="tel"
+                  autoComplete="tel"
+                  value={f.mobile}
+                  onChange={set('mobile')}
+                />
+              )}
+            </Field>
+          </div>
+
+          <aside className="application-form__notice">
+            We use your contact information to provide updates about this application.
+          </aside>
+        </section>
+
+        <section className="application-form__section" aria-labelledby="address-info-title">
+          <h2 id="address-info-title">Current address</h2>
+
+          <div className="application-form__row">
+            <Field label="Address line 1">
+              {({ id }) => (
+                <TextInput
+                  id={id}
+                  name="addressLine1"
+                  autoComplete="address-line1"
+                  value={f.line1}
+                  onChange={set('line1')}
+                />
+              )}
+            </Field>
+            <Field label="City">
+              {({ id }) => (
+                <TextInput
+                  id={id}
+                  name="city"
+                  autoComplete="address-level2"
+                  value={f.city}
+                  onChange={set('city')}
+                />
+              )}
+            </Field>
+          </div>
+
+          <div className="application-form__row">
+            <Field label="Postcode">
+              {({ id }) => (
+                <TextInput
+                  id={id}
+                  name="postcode"
+                  autoComplete="postal-code"
+                  value={f.postcode}
+                  onChange={set('postcode')}
                 />
               )}
             </Field>
@@ -182,6 +291,7 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
               {({ id }) => (
                 <TextInput
                   id={id}
+                  name="monthsAtAddress"
                   type="number"
                   min="0"
                   value={f.monthsAtAddress}
@@ -189,37 +299,54 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
                 />
               )}
             </Field>
-            <Field label="Address line 1">
-              {({ id }) => <TextInput id={id} value={f.line1} onChange={set('line1')} />}
-            </Field>
-            <Field label="City">
-              {({ id }) => <TextInput id={id} value={f.city} onChange={set('city')} />}
-            </Field>
-            <Field label="Postcode">
-              {({ id }) => <TextInput id={id} value={f.postcode} onChange={set('postcode')} />}
-            </Field>
-          </FormGrid>
-        </Card>
+          </div>
+        </section>
 
-        <Card title="Work and money">
-          <FormGrid cols={3}>
+        <section className="application-form__section" aria-labelledby="financial-info-title">
+          <h2 id="financial-info-title">Financial info</h2>
+
+          <div className="application-form__row">
+            <Field label="Residential status">
+              {({ id }) => (
+                <Select
+                  id={id}
+                  name="residentialStatus"
+                  value={f.residentialStatus}
+                  onChange={set('residentialStatus')}
+                  options={RESIDENTIAL.map(readable)}
+                />
+              )}
+            </Field>
             <Field label="Employment status">
               {({ id }) => (
                 <Select
                   id={id}
+                  name="employmentStatus"
                   value={f.employmentStatus}
                   onChange={set('employmentStatus')}
                   options={EMPLOYMENT.map(readable)}
                 />
               )}
             </Field>
+          </div>
+
+          <div className="application-form__row">
             <Field label="Employer">
-              {({ id }) => <TextInput id={id} value={f.employerName} onChange={set('employerName')} />}
+              {({ id }) => (
+                <TextInput
+                  id={id}
+                  name="employerName"
+                  autoComplete="organization"
+                  value={f.employerName}
+                  onChange={set('employerName')}
+                />
+              )}
             </Field>
             <Field label="Months in employment">
               {({ id }) => (
                 <TextInput
                   id={id}
+                  name="monthsInEmployment"
                   type="number"
                   min="0"
                   value={f.monthsInEmployment}
@@ -227,10 +354,14 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
                 />
               )}
             </Field>
+          </div>
+
+          <div className="application-form__row">
             <Field label="Annual income (£)" required>
               {({ id }) => (
                 <TextInput
                   id={id}
+                  name="annualIncome"
                   type="number"
                   min="0"
                   step="1000"
@@ -244,6 +375,7 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
               {({ id }) => (
                 <TextInput
                   id={id}
+                  name="monthlyHousingCost"
                   type="number"
                   min="0"
                   step="50"
@@ -252,10 +384,14 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
                 />
               )}
             </Field>
+          </div>
+
+          <div className="application-form__row">
             <Field label="Existing monthly credit (£)">
               {({ id }) => (
                 <TextInput
                   id={id}
+                  name="existingCreditCommitments"
                   type="number"
                   min="0"
                   step="10"
@@ -264,11 +400,6 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
                 />
               )}
             </Field>
-          </FormGrid>
-        </Card>
-
-        <Card title={`Your ${product.name}`}>
-          <FormGrid cols={2}>
             <Field
               label="Requested credit limit (£)"
               hint={`between ${money(product.minLimit)} and ${money(product.maxLimit)}`}
@@ -277,6 +408,7 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
               {({ id }) => (
                 <TextInput
                   id={id}
+                  name="requestedCreditLimit"
                   type="number"
                   min={product.minLimit}
                   max={product.maxLimit}
@@ -287,16 +419,28 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
                 />
               )}
             </Field>
-            <FormGrid.Full>
-              <Checkbox
-                label="I accept the terms and consent to a credit check."
-                checked={f.termsAccepted}
-                onChange={set('termsAccepted')}
-                required
-              />
-            </FormGrid.Full>
-          </FormGrid>
-        </Card>
+          </div>
+
+          <aside className="application-form__guidance">
+            <span aria-hidden="true">i</span>
+            <div>
+              <h3>You should know</h3>
+              <p>
+                Enter your total gross annual income before tax. Your requested limit must stay
+                within the range offered for the {product.name}.
+              </p>
+            </div>
+          </aside>
+        </section>
+
+        <div className="application-form__consent">
+          <Checkbox
+            label="I accept the terms and consent to a credit check."
+            checked={f.termsAccepted}
+            onChange={set('termsAccepted')}
+            required
+          />
+        </div>
 
         {error && (
           <Alert tone="negative" title="Could not submit">
@@ -304,15 +448,15 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
           </Alert>
         )}
 
-        <FormActions>
-          <Button type="submit" variant="primary" busy={submitting} busyLabel="Submitting…">
-            Submit application
-          </Button>
+        <div className="application-form__actions">
           <Button type="button" variant="ghost" onClick={onBack} disabled={submitting}>
             ← Back
           </Button>
-        </FormActions>
-      </Stack>
+          <Button type="submit" variant="primary" busy={submitting} busyLabel="Submitting…">
+            Submit application
+          </Button>
+        </div>
+      </div>
     </form>
   );
 }

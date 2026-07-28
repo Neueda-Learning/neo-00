@@ -2,12 +2,11 @@ import React, { useState } from 'react';
 import {
   AppShell,
   Button,
-  Card,
-  Grid,
-  KeyValue,
-  PageHeader,
   TopNav,
 } from '../design-system';
+import neoLogo from '../assets/cards/neo-logo.png';
+import platinumCardImage from '../assets/cards/neo-platinum-card.png';
+import premiumCardImage from '../assets/cards/neo-premium-card.png';
 import { PRODUCTS } from '../products.js';
 import { money } from '../status.js';
 import ApplicationForm from './ApplicationForm.jsx';
@@ -18,6 +17,11 @@ const STEPS = [
   { key: 'form', label: 'Your details' },
   { key: 'status', label: 'Decision' },
 ];
+
+const CARD_IMAGES = {
+  premium: premiumCardImage,
+  platinum: platinumCardImage,
+};
 
 /**
  * The Customer Journey Simulation: a three-step flow an attendee drives themselves —
@@ -33,15 +37,16 @@ export default function CustomerJourney({ onHome }) {
 
   return (
     <AppShell
+      className={`customer-journey customer-journey--${step}`}
       nav={
         <TopNav
-          brand="NEO"
-          product="Apply for a card"
+          className="customer-nav"
+          brand={<CustomerBrand />}
           actions={
             <>
               <Progress step={step} />
-              <Button variant="ghost" size="sm" onClick={onHome}>
-                ← Home
+              <Button className="customer-nav__home" variant="ghost" size="sm" onClick={onHome}>
+                Home
               </Button>
             </>
           }
@@ -84,6 +89,10 @@ export default function CustomerJourney({ onHome }) {
   );
 }
 
+function CustomerBrand() {
+  return <img className="customer-brand__logo" src={neoLogo} alt="NEO" />;
+}
+
 /** "Choose a card › Your details › Decision" — where the customer is, in the bar. */
 function Progress({ step }) {
   const current = STEPS.findIndex((s) => s.key === step);
@@ -112,45 +121,62 @@ function Progress({ step }) {
 /** Step 1: the products, side by side. */
 function ProductStep({ onChoose }) {
   return (
-    <>
-      <PageHeader
-        title="Choose your card"
-        lede="two cards, two tiers — pick one to start your application"
-      />
-      <Grid cols="auto" min={360}>
+    <section className="product-selection" aria-labelledby="product-selection-title">
+      <header className="product-selection__header">
+        <h1 id="product-selection-title">Choose your card.</h1>
+      </header>
+
+      <div className="product-selection__grid">
         {PRODUCTS.map((p) => (
-          <Card key={p.code} bodyless>
-            <div className={`product-face product-face--${p.accent}`}>
-              <span className="product-face__brand">Neo</span>
-              <span className="product-face__chip" aria-hidden="true" />
-              <span className="product-face__name">{p.name}</span>
-            </div>
-            <div style={{ padding: 'var(--ds-space-5)' }}>
+          <article className="product-option" key={p.code}>
+            <img
+              className="product-option__image"
+              src={CARD_IMAGES[p.accent]}
+              alt={`${p.name} in NEO's black and yellow card design`}
+            />
+
+            <header className="product-option__header">
+              <h2>{p.name}</h2>
               <p>{p.tagline}</p>
-              <ul className="product-features">
-                {p.features.map((f) => (
-                  <li key={f}>{f}</li>
-                ))}
-              </ul>
-              <KeyValue
-                items={[
-                  ['Credit limit', `${money(p.minLimit)} – ${money(p.maxLimit)}`],
-                  ['Representative APR', `${p.apr}%`],
-                  ['Minimum income', money(p.minIncome)],
-                ]}
-              />
+            </header>
+
+            <ul className="product-option__features">
+              {p.features.map((feature) => (
+                <li key={feature}>
+                  <span aria-hidden="true">✓</span>
+                  {feature}
+                </li>
+              ))}
+            </ul>
+
+            <dl className="product-option__facts">
+              <div>
+                <dt>Credit limit</dt>
+                <dd>{money(p.minLimit)} – {money(p.maxLimit)}</dd>
+              </div>
+              <div>
+                <dt>Representative APR</dt>
+                <dd>{p.apr}%</dd>
+              </div>
+              <div>
+                <dt>Minimum income</dt>
+                <dd>{money(p.minIncome)}</dd>
+              </div>
+            </dl>
+
+            <div className="product-option__actions">
               <Button
+                className="product-option__apply"
                 variant="primary"
-                block
                 onClick={() => onChoose(p)}
-                style={{ marginTop: 'var(--ds-space-5)' }}
+                aria-label={`Apply now for the ${p.name}`}
               >
-                Choose {p.name}
+                Apply Now
               </Button>
             </div>
-          </Card>
+          </article>
         ))}
-      </Grid>
-    </>
+      </div>
+    </section>
   );
 }
