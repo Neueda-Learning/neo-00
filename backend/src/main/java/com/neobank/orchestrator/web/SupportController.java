@@ -1,11 +1,13 @@
 package com.neobank.orchestrator.web;
 
 import com.neobank.orchestrator.support.SupportClient;
+import com.neobank.orchestrator.support.SupportClient.CaseView;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -43,5 +45,20 @@ public class SupportController {
                                                         @Valid @RequestBody OpenCaseRequest request) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(support.openCase(id, request.category(), request.description()));
+    }
+
+    /**
+     * The case this customer already has, so the page can keep it open and show what the bank has
+     * said back. {@code 204} when there is none, which is how the page knows to offer the form.
+     *
+     * <p>A read, not a subscription, but the page polls it — a case exists precisely because
+     * somebody is waiting for an answer, and a screen that had to be reloaded to show one is a
+     * screen nobody reloads.</p>
+     */
+    @GetMapping
+    public ResponseEntity<CaseView> myCase(@PathVariable("id") String id) {
+        return support.findCase(id)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 }

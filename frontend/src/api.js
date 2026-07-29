@@ -90,4 +90,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  // The case this customer already has, so the page can keep it open and show what the bank has
+  // said back. `null` (a 204) means they have none and should be offered the form.
+  supportCase: (id) => request(`/api/v1/applications/${id}/support-case`),
 };

@@ -100,6 +100,93 @@ class SupportClientTest {
                 .isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
+    // ---- reading the case back, so the customer can follow it ----
+
+    private static final String CASE_DETAIL = """
+            {"caseId":"case-d697da68-f15c-39e3-aa9e-65aeeb3e38f1","status":"RESOLVED",
+             "category":"APPLICATION_STATUS","channel":"WEB","priority":"P3",
+             "slaDeadline":"2026-08-01T15:03:25Z","breached":false,
+             "applicationId":"APP-0001","correlationId":"corr-APP-0001","configVersion":1,
+             "description":"when will my card arrive?","assignee":"dana","pausedMinutes":0,
+             "resolutionNote":"Posted on Tuesday, with you in 3 working days.",
+             "openedAt":"2026-07-29T15:03:25Z","resolvedAt":"2026-07-29T16:00:00Z",
+             "events":[
+               {"type":"CASE_OPENED","fromStatus":null,"toStatus":"NEW",
+                "actor":"customer via orchestrator","note":"when will my card arrive?",
+                "at":"2026-07-29T15:03:25Z"},
+               {"type":"TRANSITION","fromStatus":"NEW","toStatus":"OPEN",
+                "actor":"dana","note":null,"at":"2026-07-29T15:30:00Z"},
+               {"type":"TRANSITION","fromStatus":"OPEN","toStatus":"RESOLVED",
+                "actor":"dana","note":"Posted on Tuesday, with you in 3 working days.",
+                "at":"2026-07-29T16:00:00Z"}]}""";
+
+    private void expectCaseLookup(String applicationId, String searchBody, String detailBody) {
+        server.expect(requestTo(BASE + "/api/v1/support/cases?q=" + applicationId))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(searchBody, MediaType.APPLICATION_JSON));
+        if (detailBody != null) {
+            server.expect(requestTo(
+                            BASE + "/api/v1/support/cases/case-d697da68-f15c-39e3-aa9e-65aeeb3e38f1"))
+                    .andRespond(withSuccess(detailBody, MediaType.APPLICATION_JSON));
+        }
+    }
+
+    @Test
+    void theCaseComesBackWithWhatTheBankSaidAndNoneOfHowItRunsItself() {
+        expectCaseLookup("APP-0001",
+                "[{\"caseId\":\"case-d697da68-f15c-39e3-aa9e-65aeeb3e38f1\"}]", CASE_DETAIL);
+
+        var view = client.findCase("APP-0001").orElseThrow();
+
+        assertThat(view.status()).isEqualTo("RESOLVED");
+        assertThat(view.resolutionNote()).contains("Posted on Tuesday");
+        // The short form the support desk's own board shows, so a customer quoting their
+        // reference and an operator searching for it are looking at the same string.
+        assertThat(view.reference()).isEqualTo("d697da68");
+        // The SLA deadline, the breach flag, the priority and the assignee are how the desk runs
+        // itself. Telling a customer their question is a P3 four hours from a missed target is
+        // worse than telling them nothing.
+        assertThat(view.getClass().getRecordComponents())
+                .noneMatch(c -> java.util.List.of("priority", "slaDeadline", "breached", "assignee")
+                        .contains(c.getName()));
+        server.verify();
+    }
+
+    /** A status change nobody wrote a sentence about tells a customer nothing they did not know. */
+    @Test
+    void onlyUpdatesThatActuallySaySomethingAreShown() {
+        expectCaseLookup("APP-0001",
+                "[{\"caseId\":\"case-d697da68-f15c-39e3-aa9e-65aeeb3e38f1\"}]", CASE_DETAIL);
+
+        var view = client.findCase("APP-0001").orElseThrow();
+
+        // Three events, one of which is a bare NEW -> OPEN with no note.
+        assertThat(view.updates()).hasSize(2);
+        assertThat(view.updates()).extracting("note").doesNotContainNull();
+        assertThat(view.updates().get(0).note()).isEqualTo("when will my card arrive?");
+    }
+
+    @Test
+    void noCaseIsEmptyRatherThanAnError() {
+        expectCaseLookup("APP-0001", "[]", null);
+
+        assertThat(client.findCase("APP-0001")).isEmpty();
+        server.verify();
+    }
+
+    /**
+     * A customer who cannot be shown their case is offered the form again, not an error page.
+     * The module dedupes on the correlation id, so sending twice costs nothing and returns the
+     * case they already had.
+     */
+    @Test
+    void aSupportDeskThatCannotBeAskedIsEmptyRatherThanAnError() {
+        server.expect(requestTo(BASE + "/api/v1/support/cases?q=APP-0001"))
+                .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+
+        assertThat(client.findCase("APP-0001")).isEmpty();
+    }
+
     /**
      * A module falling over is our problem to describe, not a status code for a customer to
      * read. Note this is the module ANSWERING badly, not failing to answer — both end as a 502,
