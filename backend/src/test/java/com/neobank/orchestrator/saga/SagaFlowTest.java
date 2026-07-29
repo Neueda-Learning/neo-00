@@ -5,14 +5,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.neobank.orchestrator.domain.Application;
 import com.neobank.orchestrator.generator.GeneratorService;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationDetail;
+import com.neobank.orchestrator.saga.SagaDtos.ApplicationRequest;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationRow;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationStatusUpdate;
 import com.neobank.orchestrator.saga.SagaDtos.EventView;
 import com.neobank.orchestrator.saga.SagaDtos.ServiceSummary;
 import com.neobank.orchestrator.saga.SagaDtos.StepView;
+import com.neobank.orchestrator.saga.SagaStore.DispatchTarget;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -400,6 +403,111 @@ class SagaFlowTest {
 
         assertThat(forService).isNotEmpty();
         assertThat(forService).allSatisfy(e -> assertThat(e.serviceId()).isEqualTo("neo02"));
+    }
+
+    // ---- outputs ----
+
+    @Test
+    void whatAServiceProducesIsVisibleOnTheJourney() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo01", "ACCEPTED", "ok", Map.of("approvedLimit", 3000)));
+
+        assertThat(detail(id).outputs()).containsEntry("approvedLimit", 3000);
+    }
+
+    @Test
+    void laterServicesAddTheirOwnKeysRatherThanReplacingTheMap() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo01", "ACCEPTED", "ok", Map.of("approvedLimit", 3000)));
+        awaitDispatchOf(id, 2);
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo02", "ACCEPTED", "ok", Map.of("accountId", "CC-0058291")));
+
+        assertThat(detail(id).outputs())
+                .containsEntry("approvedLimit", 3000)
+                .containsEntry("accountId", "CC-0058291");
+    }
+
+    /** Absent means unchanged — the whole reason the modules that ignore outputs are unaffected. */
+    @Test
+    void aStatusUpdateWithNoOutputsLeavesWhatWasAlreadyReported() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo01", "ACCEPTED", "ok", Map.of("approvedLimit", 3000)));
+        awaitDispatchOf(id, 2);
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo02", "ACCEPTED", "nothing to add"));
+
+        assertThat(detail(id).outputs()).containsEntry("approvedLimit", 3000);
+    }
+
+    /**
+     * Dropped whole, not truncated: half a JSON document would reach the next service looking
+     * like data, which is worse than the absence it replaced.
+     */
+    @Test
+    void anOversizedMapIsDroppedWholeAndTheEarlierOneSurvives() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo01", "ACCEPTED", "ok", Map.of("approvedLimit", 3000)));
+        awaitDispatchOf(id, 2);
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo02", "ACCEPTED", "ok", Map.of("essay", "x".repeat(Application.OUTPUTS_MAX))));
+
+        assertThat(detail(id).outputs())
+                .containsEntry("approvedLimit", 3000)
+                .doesNotContainKey("essay");
+    }
+
+    /** Recorded on the log, but a service that is not the current step may not move the journey
+     *  — and that includes moving what the journey has accumulated. */
+    @Test
+    void outputsFromAServiceThatIsNotTheCurrentStepNeverReachTheJourney() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo05", "ACCEPTED", "not my turn", Map.of("approvedLimit", 9999)));
+
+        assertThat(detail(id).outputs()).isEmpty();
+    }
+
+    /**
+     * The one assertion that proves the feature: what step 1 produced is in the envelope step 2
+     * receives. Goes through the same {@code beginDispatch} → {@code toRequest} pair
+     * {@link SagaEngine#dispatch} uses, rather than the stubbed HTTP client.
+     */
+    @Test
+    void theEnvelopeForTheNextStepCarriesWhatEarlierServicesReported() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo01", "ACCEPTED", "ok", Map.of("approvedLimit", 3000, "apr", 24.9)));
+        awaitDispatchOf(id, 2);
+
+        DispatchTarget target = store.beginDispatch(id, 2).orElseThrow();
+        ApplicationRequest envelope = store.toRequest(target, "process-application");
+
+        assertThat(envelope.outputs())
+                .containsEntry("approvedLimit", 3000)
+                .containsEntry("apr", 24.9);
+        // A sibling of the application, never merged into it: the application is what the
+        // customer submitted and must read the same whether pushed here or pulled from /{id}.
+        assertThat(envelope.application()).doesNotContainKey("approvedLimit");
+    }
+
+    @Test
+    void theFirstStepIsDispatchedWithAnEmptyOutputsMapRatherThanNull() {
+        String id = startAndAwaitDispatch();
+
+        DispatchTarget target = store.beginDispatch(id, 1).orElseThrow();
+
+        assertThat(store.toRequest(target, "process-application").outputs()).isEmpty();
     }
 
     // ---- helpers ----

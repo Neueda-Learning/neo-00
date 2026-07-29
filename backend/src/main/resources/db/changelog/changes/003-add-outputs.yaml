@@ -1,0 +1,28 @@
+# What the services have reported so far, accumulated and carried forward.
+#
+# Each module may attach an optional `outputs` map to its status update; they are merged here
+# and the whole map rides every later dispatch envelope, which is how neo-05's approved limit
+# reaches neo-06, neo-07 and neo-08. NULL means nothing has been reported yet.
+#
+# VARCHAR(2000), not TEXT, for the reason payload_json already documents: H2 and MySQL disagree
+# about what TEXT/@Lob map to, and ddl-auto=validate then refuses to boot on one of them. The
+# size is a budget, not a guess — utf8mb4 costs 4 bytes per character and MySQL caps the whole
+# row at 65535, of which `application` already spends 33152 (8288 declared characters, mostly
+# payload_json). 2000 more characters costs 8000 bytes, taking the row to 41152. The sidecar's
+# equivalent column is deliberately the same size: a map one of them accepts and the other
+# drops is exactly the local-passes/stack-fails split the sidecar exists to prevent.
+databaseChangeLog:
+  - changeSet:
+      id: 003-add-outputs
+      author: neo-00
+      changes:
+        - addColumn:
+            tableName: application
+            columns:
+              - column:
+                  name: outputs_json
+                  type: VARCHAR(2000)
+      rollback:
+        - dropColumn:
+            tableName: application
+            columnName: outputs_json

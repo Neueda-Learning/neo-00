@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -72,7 +73,8 @@ public class SagaStore {
 
     /** What the engine needs in order to POST one step. */
     public record DispatchTarget(String applicationId, String correlationId, int step,
-                                 Map<String, Object> application) {
+                                 Map<String, Object> application,
+                                 Map<String, Object> outputs) {
     }
 
     private final ApplicationRepository applications;
@@ -120,7 +122,7 @@ public class SagaStore {
         events.save(new ApplicationEvent(applicationId, step, service.serviceId(),
                 ApplicationEvent.REQUEST_SENT, null, "sent to " + service.name()));
         return Optional.of(new DispatchTarget(applicationId, app.getCorrelationId(), step,
-                readPayload(app.getPayloadJson())));
+                readPayload(app.getPayloadJson()), readPayload(app.getOutputsJson())));
     }
 
     /**
@@ -269,6 +271,13 @@ public class SagaStore {
             return new CallbackOutcome.Ignored("unknown status " + cb.status());
         }
 
+        // Only now, past every guard: a late, duplicate or wrong-step update is recorded in the
+        // log but must not mutate journey state, and an unrecognised word is not an outcome at
+        // all. Note this sits BEFORE the switch, so an IN_PROGRESS report merges too — that is
+        // deliberate, because the one step that legitimately calls back twice (neo-06's
+        // PENDING-then-terminal) may have something to hand on already at the first call.
+        mergeOutputs(app, cb);
+
         return switch (status) {
             case StatusVocabulary.ACCEPTED -> {
                 if (app.getCurrentStep() >= registry.size()) {
@@ -402,6 +411,7 @@ public class SagaStore {
     public Optional<SagaDtos.ApplicationDetail> detail(String id) {
         return applications.findById(id)
                 .map(a -> SagaDtos.ApplicationDetail.of(a, readPayload(a.getPayloadJson()),
+                        readPayload(a.getOutputsJson()),
                         events.findByApplicationIdOrderByIdAsc(id)));
     }
 
@@ -547,6 +557,46 @@ public class SagaStore {
                 .orElse(fallback);
     }
 
+    /**
+     * Fold this service's {@code outputs} into the journey's accumulated map (api-contract §3).
+     *
+     * <p><b>Absent means unchanged.</b> A null map writes nothing at all — that is what keeps the
+     * services which never send one completely unaffected by this feature, and it is why an empty
+     * map is treated as a real (if pointless) report rather than as absence. The merge itself is
+     * a plain {@code putAll}: last writer wins, and an explicit null value is stored as a null
+     * rather than deleting the key. Nothing here defends one service's keys from another's —
+     * that is what the ownership table in api-contract §3 is for.</p>
+     *
+     * <p>An oversized document is <b>dropped whole</b>, leaving the previous map intact. Never
+     * truncated: half a JSON document is a parse error served to the next service as if it were
+     * data, which is worse than the absence it would be replacing.</p>
+     */
+    private void mergeOutputs(Application app, ApplicationStatusUpdate cb) {
+        if (cb.outputs() == null) {
+            return;
+        }
+        Map<String, Object> merged = new LinkedHashMap<>(readPayload(app.getOutputsJson()));
+        merged.putAll(cb.outputs());
+        String encoded;
+        try {
+            encoded = json.writeValueAsString(merged);
+        } catch (Exception e) {
+            log.warn("{} sent outputs on {} that will not serialize — keeping the previous map: {}",
+                    cb.serviceId(), app.getId(), e.toString());
+            return;
+        }
+        if (encoded.length() > Application.OUTPUTS_MAX) {
+            log.warn("{} sent outputs on {} that take the accumulated map to {} characters, over "
+                            + "the {} the column holds — the whole update is dropped and the "
+                            + "previous map kept. Report identifiers, not documents.",
+                    cb.serviceId(), app.getId(), encoded.length(), Application.OUTPUTS_MAX);
+            return;
+        }
+        app.setOutputsJson(encoded);
+        applications.save(app);
+        log.info("{} reported outputs {} on {}", cb.serviceId(), cb.outputs().keySet(), app.getId());
+    }
+
     private Map<String, Object> readPayload(String payloadJson) {
         try {
             return payloadJson == null ? Map.of()
@@ -561,6 +611,6 @@ public class SagaStore {
     /** Only used to build the outbound envelope; kept here so the engine stays HTTP-only. */
     public ApplicationRequest toRequest(DispatchTarget target, String command) {
         return new ApplicationRequest(target.applicationId(), target.correlationId(),
-                command, target.application());
+                command, target.application(), target.outputs());
     }
 }

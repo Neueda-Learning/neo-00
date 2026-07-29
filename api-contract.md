@@ -57,9 +57,16 @@ Content-Type: application/json
   "applicationId": "APP-0001",
   "correlationId": "8f14e45f-ea6d-4b1c-9a3e-2b7c1d5e9a01",
   "command": "process-application",
-  "application": { /* §4 */ }
+  "application": { /* §4 */ },
+  "outputs": { "approvedLimit": 3000, "apr": 24.9 }
 }
 ```
+
+`outputs` is what **earlier steps produced** — see §3. It is empty on step 1 and stays empty for
+as long as nobody reports anything, so a module that ignores it is unaffected. Note it is a
+**sibling of `application`, never merged into it**: the application is what the customer
+submitted and is the same object however you obtain it, pushed here or pulled from
+`GET /api/v1/applications/{id}` (§5).
 
 ### Response — `202 Accepted`, immediately
 
@@ -97,15 +104,78 @@ PUT ${ORCHESTRATOR_URL}/api/v1/applications/{applicationId}
 }
 ```
 
-**Three fields — the application id is in the URL, not the body.** This is an update to an
-application the orchestrator already owns, so the id identifies the resource; carrying it twice
-would only create a way for the two to disagree. An `applicationId` left in the body is ignored.
+**The application id is in the URL, not the body.** This is an update to an application the
+orchestrator already owns, so the id identifies the resource; carrying it twice would only create
+a way for the two to disagree. An `applicationId` left in the body is ignored.
 
 | Field | Notes |
 |---|---|
 | `serviceId` | `neo01` … `neo10` — your repo name **without the hyphen** (`neo-04` → `neo04`) |
 | `status` | **send `ACCEPTED` · `REJECTED` · `REFERRED`** — the same three for every module. Your brief's own word is also understood; see *Which vocabulary to use* |
 | `comment` | free text, shown in the event log — your module's reason for the outcome |
+| `outputs` | **optional.** What you *produced*, for the steps after you — see *Handing something to the next step* |
+
+### Handing something to the next step
+
+`comment` says **why**; `outputs` carries **what you produced**. It is an optional map beside your
+status:
+
+```jsonc
+{
+  "serviceId": "neo05",
+  "status": "ACCEPTED",
+  "comment": "granted at the product maximum",
+  "outputs": { "approvedLimit": 3000, "apr": 24.9 }
+}
+```
+
+The orchestrator merges it into the journey's accumulated map and sends that whole map on **every
+later dispatch**, beside the application (§2). That is how neo-05's approved limit reaches neo-06,
+neo-07 and neo-08. It is also shown to the operator on the board, and served on
+`GET /api/v1/applications/{id}/journey`.
+
+**Omit it entirely if you have nothing to hand on** — most modules do, and most of the time.
+**Absent means unchanged**: it does not clear what earlier steps reported. An empty `{}` is a
+report of nothing, which is not the same thing. Send identifiers and numbers, not documents:
+the accumulated map is capped at 2000 characters, and an update that would exceed it is **dropped
+whole** (never truncated — half a JSON document would reach the next module looking like data)
+with a `WARN` naming your module.
+
+#### Who may write which key
+
+The merge is last-writer-wins and **will not defend itself**. If two modules wrote
+`approvedLimit`, the later step would silently overwrite the earlier and the card would be
+embossed against the wrong number. So the keys are owned:
+
+| key | written by | type | meaning |
+|---|---|---|---|
+| `approvedLimit` | **`neo05` only** | integer, whole GBP | the limit actually **granted** — not `product.requestedCreditLimit`, which is what the applicant asked for and is already in the application |
+| `apr` | **`neo05` only** | number, one decimal | the rate the agreement is priced at |
+| `accountId` | **`neo07` only** | string | the card account opened in the core, e.g. `CC-0058291` |
+| `accountReference` | **`neo07` only** | string | neo-07's own case reference, e.g. `acc-a1b2c3d4` |
+| `panLast4` | **`neo08` only** | string | last four digits of the issued card |
+
+Writing a key you do not own, or inventing one, is a change to this table first. Reading any of
+them is free.
+
+#### Reading a number back
+
+A value crosses JSON twice on its way to you, and **JSON has one number type where Java has
+several**. Whether `approvedLimit` arrives as an `Integer`, a `Long` or a `Double` depends on its
+magnitude and on Jackson's mood, so a cast is a `ClassCastException` waiting for a big enough
+limit:
+
+```java
+// NO — works until it doesn't
+Integer limit = (Integer) outputs.get("approvedLimit");
+
+// YES — read through Number, which every JSON numeric maps to
+Object raw = outputs.get("approvedLimit");
+Integer limit = raw instanceof Number n ? n.intValue() : null;
+```
+
+Same for `apr` with `doubleValue()`. Strings are safe to cast, but `instanceof String` costs
+nothing and a missing key is `null` either way.
 
 ### Which vocabulary to use
 

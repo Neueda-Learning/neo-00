@@ -8,6 +8,7 @@ import {
   EmptyState,
   Field,
   Grid,
+  KeyValue,
   MetricTile,
   PageHeader,
   SearchInput,
@@ -217,8 +218,26 @@ function ApplicationLog({ applicationId }) {
   if (error) return <Alert tone="negative">{error}</Alert>;
   if (!detail) return <EmptyState flush title="Loading…" />;
 
+  const outputs = Object.entries(detail.outputs ?? {});
+
   return (
     <>
+      {outputs.length > 0 && (
+        <>
+          <KeyValue
+            items={outputs.map(([label, value]) => ({
+              label,
+              value: value === null || value === undefined ? '—' : String(value),
+              mono: true,
+            }))}
+          />
+          <Caption>
+            What the services produced, accumulated. Every later step is dispatched
+            with this map beside the application — it is how the approved limit
+            reaches the agreement and the account id reaches the card.
+          </Caption>
+        </>
+      )}
       <Timeline
         items={detail.events.map((e) => ({
           id: e.id,

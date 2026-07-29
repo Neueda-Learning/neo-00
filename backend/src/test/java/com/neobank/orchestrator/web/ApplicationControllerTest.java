@@ -57,7 +57,7 @@ class ApplicationControllerTest {
     private void stubDetail(String id, String applicant, String product) {
         when(store.detail(id)).thenReturn(Optional.of(
                 new ApplicationDetail(id, applicant, product, 8000, "WEB", 0, null,
-                        Application.IN_PROGRESS, Map.of(), null, null, List.of())));
+                        Application.IN_PROGRESS, Map.of(), Map.of(), null, null, List.of())));
     }
 
     @Test
