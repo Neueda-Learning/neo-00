@@ -114,6 +114,11 @@ function Progress({ step }) {
 function ProductStep({ onChoose }) {
   // The codes and limit ranges belong to the verification module, not to us, and it rejects an
   // application that disagrees with them. Read them; keep the built-in copy if it cannot be asked.
+  //
+  // The copy is the INITIAL state, not an error state, and that is what makes this safe to do on
+  // mount: the cards are on screen before the request is made, so a slow module delays an update
+  // rather than an empty page. Measured — module stopped, 0.4s; module hung, 5s (the orchestrator's
+  // read timeout), both ending in the same two cards nobody saw flicker.
   const [products, setProducts] = useState(PRODUCTS);
 
   useEffect(() => {

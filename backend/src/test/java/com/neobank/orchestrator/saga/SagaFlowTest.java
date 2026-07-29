@@ -42,6 +42,12 @@ import org.springframework.web.client.RestClient;
         "spring.datasource.url=jdbc:h2:mem:sagaflow;MODE=MySQL;DB_CLOSE_DELAY=-1",
         // Two seconds instead of ten minutes, so the signature hold's own clock is testable
         // in the same context that proves the ordinary one does not apply to it.
+        //
+        // It applies to the whole class, but only bites a journey that has actually been MARKED
+        // as awaiting a signature — which takes an IN_PROGRESS report from neo06 specifically.
+        // No other test here sends one, so they all still run on the ordinary timeout. If you add
+        // a neo06 progress report to an unrelated test and it starts failing after two seconds,
+        // this line is why.
         "orchestrator.signature.timeout=2s"})
 class SagaFlowTest {
 
