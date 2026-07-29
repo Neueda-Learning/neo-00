@@ -26,7 +26,7 @@ class ApplicationFactoryTest {
                 "nationality", "countryOfResidence", "taxResidencies", "currentAddress");
         assertThat(nested(app, "product")).containsKeys("productCode", "requestedCreditLimit");
         assertThat(nested(app, "product").get("productCode")).isIn(
-                "CREDIT_CARD_PREMIUM", "CREDIT_CARD_PLATINUM");
+                "CREDIT_CARD_STANDARD", "CREDIT_CARD_REWARDS");
     }
 
     @Test
@@ -37,11 +37,18 @@ class ApplicationFactoryTest {
             Map<String, Object> app = factory.next("APP-" + i);
             Map<String, Object> product = nested(app, "product");
             int limit = (int) product.get("requestedCreditLimit");
-            int max = switch ((String) product.get("productCode")) {
-                case "CREDIT_CARD_PREMIUM" -> 10000;
-                default -> 25000; // CREDIT_CARD_PLATINUM
+            // The exact windows neo-01's current config allows for each code. A generated
+            // fixture outside them is rejected VER_INVALID_FIELD at step 1 and demonstrates
+            // nothing, which is what the whole board did until these codes were corrected.
+            int min = switch ((String) product.get("productCode")) {
+                case "CREDIT_CARD_STANDARD" -> 250;
+                default -> 500; // CREDIT_CARD_REWARDS
             };
-            assertThat(limit).isBetween(50, max);
+            int max = switch ((String) product.get("productCode")) {
+                case "CREDIT_CARD_STANDARD" -> 5000;
+                default -> 10000; // CREDIT_CARD_REWARDS
+            };
+            assertThat(limit).isBetween(min, max);
         });
     }
 

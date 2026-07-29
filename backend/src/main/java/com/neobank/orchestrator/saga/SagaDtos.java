@@ -99,6 +99,10 @@ public final class SagaDtos {
      * {@code pendingStep} is non-null only while demo stepping has this journey parked, and is
      * the step the Proceed button will send. The front end uses its presence to decide whether
      * to draw that button at all.
+     *
+     * <p>{@code awaitingSignature} is the other hold, and the two are not interchangeable: this
+     * one is waiting on the customer, no operator can release it, and the step it is waiting at
+     * is simply {@code currentStep}.</p>
      */
     public record ApplicationRow(
             String id,
@@ -108,6 +112,7 @@ public final class SagaDtos {
             String channel,
             int currentStep,
             Integer pendingStep,
+            boolean awaitingSignature,
             String overallStatus,
             Instant createdAt,
             Instant updatedAt,
@@ -155,21 +160,24 @@ public final class SagaDtos {
             String channel,
             int currentStep,
             Integer pendingStep,
+            boolean awaitingSignature,
             String overallStatus,
             Map<String, Object> application,
             Map<String, Object> outputs,
             Instant createdAt,
             Instant updatedAt,
+            List<StepView> steps,
             List<EventView> events) {
 
         public static ApplicationDetail of(Application a, Map<String, Object> application,
                                            Map<String, Object> outputs,
+                                           List<StepView> steps,
                                            List<ApplicationEvent> events) {
             return new ApplicationDetail(
                     a.getId(), a.getApplicantName(), a.getProductCode(), a.getRequestedLimit(),
-                    a.getChannel(), a.getCurrentStep(), a.getPendingStep(), a.getOverallStatus(),
-                    application, outputs, a.getCreatedAt(), a.getUpdatedAt(),
-                    events.stream().map(EventView::from).toList());
+                    a.getChannel(), a.getCurrentStep(), a.getPendingStep(), a.isAwaitingSignature(),
+                    a.getOverallStatus(), application, outputs, a.getCreatedAt(), a.getUpdatedAt(),
+                    steps, events.stream().map(EventView::from).toList());
         }
     }
 

@@ -140,6 +140,71 @@
   color: var(--ds-color-accent-ink);
 }
 
+/* ── The live journey: checks down the left, what to do on the right ─────── */
+/* Not an AppShell `side`: that slot is the app's navigation, and the design system's rule is
+   `nav` OR `side`, never both. This is content — the state of one application — so it is a
+   layout inside the page and the top bar keeps its ← Home. */
+.journey-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: var(--ds-space-6);
+  align-items: start;
+}
+
+/* Same breakpoint as .ds-split, so the two never disagree about when a screen is narrow. */
+@media (max-width: 900px) {
+  .journey-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.journey-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-3);
+}
+
+.journey-steps__item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 var(--ds-space-3);
+  align-items: center;
+  font-size: var(--ds-text-md);
+}
+
+.journey-steps__name {
+  color: var(--ds-color-text);
+}
+
+.journey-steps__state {
+  grid-column: 2;
+  color: var(--ds-color-text-muted);
+  font-size: var(--ds-text-xs);
+}
+
+/* The step being worked on is the one the customer is looking for. */
+.journey-steps__item--active .journey-steps__name {
+  font-weight: var(--ds-weight-semibold);
+}
+
+/* Steps not yet reached recede rather than disappear — the point of the rail is that you can
+   see what is still to come. */
+.journey-steps__item--idle .journey-steps__name {
+  color: var(--ds-color-text-muted);
+}
+
+.agreement-doc {
+  display: block;
+  width: 100%;
+  height: 460px;
+  margin-top: var(--ds-space-5);
+  border: var(--ds-border-width) solid var(--ds-color-border);
+  border-radius: var(--ds-radius-md);
+  /* The PDF viewer is the browser's own and paints its own background; a transparent frame over
+     the aurora ground renders as unreadable grey-on-grey. */
+  background: var(--ds-control-fill);
+}
+
 /* ── The product card ────────────────────────────────────────────────────── */
 .product-face {
   position: relative;

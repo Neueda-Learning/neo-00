@@ -1,0 +1,27 @@
+# The signature hold: the journey stops at the agreement step and waits for the CUSTOMER,
+# not for an operator.
+#
+# Separate from pending_step on purpose — the two holds are not the same thing and must not
+# share a column. An operator hold is released by a click on the backoffice board and is skipped
+# by the timeout sweeper entirely; a signature hold is released by the module reporting that the
+# customer signed, and still has a clock on it, just a far longer one. Turning demo stepping off
+# releases every operator hold; it must not release a customer's.
+#
+# A TIMESTAMP rather than a boolean: it records WHEN the wait started, which is what the sweeper
+# measures against, and it dodges the BOOLEAN trap 002 documents (Liquibase renders it TINYINT on
+# MySQL while Hibernate expects BIT, and ddl-auto=validate then refuses to boot).
+databaseChangeLog:
+  - changeSet:
+      id: 004-add-awaiting-signature
+      author: neo-00
+      changes:
+        - addColumn:
+            tableName: application
+            columns:
+              - column:
+                  name: awaiting_signature_at
+                  type: TIMESTAMP
+      rollback:
+        - dropColumn:
+            tableName: application
+            columnName: awaiting_signature_at

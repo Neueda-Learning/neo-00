@@ -81,6 +81,23 @@ public class Application {
     private Integer pendingStep;
 
     /**
+     * The agreement step is waiting for the customer to sign: {@code null} means nobody is being
+     * waited on, a timestamp is when the wait started.
+     *
+     * <p><b>Not the same hold as {@link #pendingStep}, and deliberately a second column.</b> An
+     * operator hold is released by a click and turning demo stepping off releases every one of
+     * them; a customer hold is released by the module reporting what the customer did, and must
+     * survive that. Sharing a column would make "release everything parked" cancel a signature
+     * the customer is still reading.</p>
+     *
+     * <p>The step is not stored because it does not need to be: unlike an operator hold, nothing
+     * here will be dispatched on release. {@code currentStep} still points at the signature
+     * service, which is still the one that will answer.</p>
+     */
+    @Column(name = "awaiting_signature_at")
+    private Instant awaitingSignatureAt;
+
+    /**
      * What the services have reported so far, accumulated — the journey's own scratchpad.
      *
      * <p>Each module may attach an {@code outputs} map to its status update; they are merged
@@ -190,6 +207,20 @@ public class Application {
     /** Parked in demo mode, waiting for someone to press Proceed. */
     public boolean isAwaitingOperator() {
         return pendingStep != null;
+    }
+
+    public Instant getAwaitingSignatureAt() {
+        return awaitingSignatureAt;
+    }
+
+    public void setAwaitingSignatureAt(Instant awaitingSignatureAt) {
+        this.awaitingSignatureAt = awaitingSignatureAt;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Held at the agreement step, waiting for the customer to sign or decline. */
+    public boolean isAwaitingSignature() {
+        return awaitingSignatureAt != null;
     }
 
     public String getOutputsJson() {

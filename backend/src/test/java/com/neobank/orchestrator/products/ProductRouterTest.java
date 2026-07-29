@@ -38,33 +38,33 @@ class ProductRouterTest {
 
     @Test
     void routesEachProductToItsOwnHandler() {
-        RecordingHandler platinum = new RecordingHandler("CREDIT_CARD_PLATINUM");
-        RecordingHandler premium = new RecordingHandler("CREDIT_CARD_PREMIUM");
-        ProductRouter router = new ProductRouter(List.of(platinum, premium));
+        RecordingHandler rewards = new RecordingHandler("CREDIT_CARD_REWARDS");
+        RecordingHandler standard = new RecordingHandler("CREDIT_CARD_STANDARD");
+        ProductRouter router = new ProductRouter(List.of(rewards, standard));
 
-        router.route("CREDIT_CARD_PLATINUM", "APP-0001", application("CREDIT_CARD_PLATINUM"));
-        router.route("CREDIT_CARD_PREMIUM", "APP-0002", application("CREDIT_CARD_PREMIUM"));
+        router.route("CREDIT_CARD_REWARDS", "APP-0001", application("CREDIT_CARD_REWARDS"));
+        router.route("CREDIT_CARD_STANDARD", "APP-0002", application("CREDIT_CARD_STANDARD"));
 
-        assertThat(platinum.handled).isEqualTo("APP-0001");
-        assertThat(premium.handled).isEqualTo("APP-0002");
+        assertThat(rewards.handled).isEqualTo("APP-0001");
+        assertThat(standard.handled).isEqualTo("APP-0002");
     }
 
     @Test
     void unknownOrAbsentProductIsSkippedNotThrown() {
-        RecordingHandler platinum = new RecordingHandler("CREDIT_CARD_PLATINUM");
-        ProductRouter router = new ProductRouter(List.of(platinum));
+        RecordingHandler rewards = new RecordingHandler("CREDIT_CARD_REWARDS");
+        ProductRouter router = new ProductRouter(List.of(rewards));
 
         assertThatCode(() ->
                 router.route("CREDIT_CARD_MYSTERY", "APP-0003", application("CREDIT_CARD_MYSTERY")))
                 .doesNotThrowAnyException();
         assertThatCode(() -> router.route(null, "APP-0004", Map.of())).doesNotThrowAnyException();
 
-        assertThat(platinum.handled).isNull();
+        assertThat(rewards.handled).isNull();
     }
 
     @Test
     void realHandlersAnnounceTheirProductCode() {
-        assertThat(new PlatinumCardHandler().productCode()).isEqualTo("CREDIT_CARD_PLATINUM");
-        assertThat(new PremiumCardHandler().productCode()).isEqualTo("CREDIT_CARD_PREMIUM");
+        assertThat(new RewardsCardHandler().productCode()).isEqualTo("CREDIT_CARD_REWARDS");
+        assertThat(new StandardCardHandler().productCode()).isEqualTo("CREDIT_CARD_STANDARD");
     }
 }

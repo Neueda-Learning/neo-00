@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AppShell,
   Button,
@@ -8,7 +8,8 @@ import {
   PageHeader,
   TopNav,
 } from '../design-system';
-import { PRODUCTS } from '../products.js';
+import { api } from '../api.js';
+import { PRODUCTS, withLiveCatalogue } from '../products.js';
 import { money } from '../status.js';
 import ApplicationForm from './ApplicationForm.jsx';
 import JourneyStatus from './JourneyStatus.jsx';
@@ -111,6 +112,25 @@ function Progress({ step }) {
 
 /** Step 1: the products, side by side. */
 function ProductStep({ onChoose }) {
+  // The codes and limit ranges belong to the verification module, not to us, and it rejects an
+  // application that disagrees with them. Read them; keep the built-in copy if it cannot be asked.
+  const [products, setProducts] = useState(PRODUCTS);
+
+  useEffect(() => {
+    let live = true;
+    api
+      .products()
+      .then((entries) => {
+        if (live) setProducts(withLiveCatalogue(entries));
+      })
+      .catch(() => {
+        /* the fallback list is already in state */
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
   return (
     <>
       <PageHeader
@@ -118,7 +138,7 @@ function ProductStep({ onChoose }) {
         lede="two cards, two tiers — pick one to start your application"
       />
       <Grid cols="auto" min={360}>
-        {PRODUCTS.map((p) => (
+        {products.map((p) => (
           <Card key={p.code} bodyless>
             <div className={`product-face product-face--${p.accent}`}>
               <span className="product-face__brand">Neo</span>

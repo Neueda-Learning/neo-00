@@ -7,3 +7,5 @@ databaseChangeLog:
       file: db/changelog/changes/002-add-pending-step.yaml
   - include:
       file: db/changelog/changes/003-add-outputs.yaml
+  - include:
+      file: db/changelog/changes/004-add-awaiting-signature.yaml

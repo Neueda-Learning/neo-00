@@ -56,28 +56,29 @@ class ApplicationControllerTest {
 
     private void stubDetail(String id, String applicant, String product) {
         when(store.detail(id)).thenReturn(Optional.of(
-                new ApplicationDetail(id, applicant, product, 8000, "WEB", 0, null,
-                        Application.IN_PROGRESS, Map.of(), Map.of(), null, null, List.of())));
+                new ApplicationDetail(id, applicant, product, 8000, "WEB", 0, null, false,
+                        Application.IN_PROGRESS, Map.of(), Map.of(), null, null,
+                        List.of(), List.of())));
     }
 
     @Test
     void aSubmittedApplicationIsCreatedFromTheBody() throws Exception {
         Application app = new Application("APP-0007", "corr", "Ada Byron",
-                "CREDIT_CARD_PLATINUM", 8000, "WEB", "{}");
+                "CREDIT_CARD_REWARDS", 8000, "WEB", "{}");
         when(generator.createAndStart(anyMap())).thenReturn(app);
-        stubDetail("APP-0007", "Ada Byron", "CREDIT_CARD_PLATINUM");
+        stubDetail("APP-0007", "Ada Byron", "CREDIT_CARD_REWARDS");
 
         mvc.perform(post("/api/v1/applications")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"channel":"WEB",
                                  "applicant":{"fullName":"Ada Byron"},
-                                 "product":{"productCode":"CREDIT_CARD_PLATINUM",
+                                 "product":{"productCode":"CREDIT_CARD_REWARDS",
                                             "requestedCreditLimit":8000}}
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("APP-0007"))
-                .andExpect(jsonPath("$.productCode").value("CREDIT_CARD_PLATINUM"));
+                .andExpect(jsonPath("$.productCode").value("CREDIT_CARD_REWARDS"));
 
         verify(generator).createAndStart(anyMap());
     }
@@ -85,9 +86,9 @@ class ApplicationControllerTest {
     @Test
     void noBodyStillGeneratesAFixture() throws Exception {
         Application app = new Application("APP-0001", "corr", "Maria Nowak",
-                "CREDIT_CARD_PREMIUM", 3000, "MOBILE_APP", "{}");
+                "CREDIT_CARD_STANDARD", 3000, "MOBILE_APP", "{}");
         when(generator.createAndStart()).thenReturn(app);
-        stubDetail("APP-0001", "Maria Nowak", "CREDIT_CARD_PREMIUM");
+        stubDetail("APP-0001", "Maria Nowak", "CREDIT_CARD_STANDARD");
 
         mvc.perform(post("/api/v1/applications"))
                 .andExpect(status().isCreated())
@@ -100,7 +101,7 @@ class ApplicationControllerTest {
     void aSubmissionMissingTheApplicantIsRejected() throws Exception {
         mvc.perform(post("/api/v1/applications")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"product\":{\"productCode\":\"CREDIT_CARD_PLATINUM\"}}"))
+                        .content("{\"product\":{\"productCode\":\"CREDIT_CARD_REWARDS\"}}"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -153,7 +154,7 @@ class ApplicationControllerTest {
                 "applicationId", id,
                 "channel", "WEB",
                 "applicant", Map.of("fullName", fullName, "dateOfBirth", "1996-04-11"),
-                "product", Map.of("productCode", "CREDIT_CARD_PLATINUM",
+                "product", Map.of("productCode", "CREDIT_CARD_REWARDS",
                         "requestedCreditLimit", 8000));
     }
 
@@ -171,7 +172,7 @@ class ApplicationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.applicationId").value("APP-0001"))
                 .andExpect(jsonPath("$.applicant.fullName").value("Maria Nowak"))
-                .andExpect(jsonPath("$.product.productCode").value("CREDIT_CARD_PLATINUM"))
+                .andExpect(jsonPath("$.product.productCode").value("CREDIT_CARD_REWARDS"))
                 // The board row's fields must NOT be here — this is the application, not the view.
                 .andExpect(jsonPath("$.overallStatus").doesNotExist())
                 .andExpect(jsonPath("$.events").doesNotExist());
@@ -188,7 +189,7 @@ class ApplicationControllerTest {
 
     @Test
     void theJourneyViewKeepsTheBoardRowAndTheEventLog() throws Exception {
-        stubDetail("APP-0001", "Maria Nowak", "CREDIT_CARD_PLATINUM");
+        stubDetail("APP-0001", "Maria Nowak", "CREDIT_CARD_REWARDS");
 
         mvc.perform(get("/api/v1/applications/{id}/journey", "APP-0001"))
                 .andExpect(status().isOk())

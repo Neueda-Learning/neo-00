@@ -47,6 +47,35 @@ orchestrator:
   # everything currently parked.
   demo-stepping: ${DEMO_STEPPING:false}
 
+  # THE ONE STEP THAT WAITS FOR A PERSON. The agreement service generates a credit agreement and
+  # sends it for signature; until the customer signs it there is nothing for it to decide, so it
+  # reports progress rather than an outcome and the journey holds at that step.
+  #
+  # This is NOT a special case in the saga — any service reporting IN_PROGRESS already means "the
+  # journey waits". All this names is whose wait is a customer's, and therefore gets a longer
+  # rope than callback-timeout, which is how long a MODULE may think. The rope is still finite:
+  # an unbounded wait is a journey that sits IN_PROGRESS for the life of the database.
+  #
+  # NOTE the module's own expiry clock is measured in days, so for anything past this timeout the
+  # orchestrator gives up first and the module's case is left PENDING. Ours is the clock that
+  # decides — see api-contract.md §7.
+  signature:
+    service-id: ${SIGNATURE_SERVICE_ID:neo06}
+    timeout: ${SIGNATURE_TIMEOUT:10m}
+
+  # THE SUPPORT DESK. Addressed, not sequenced — neo09 is an analytical module and must NOT be
+  # added to services[] below, or the saga would dispatch to it and wait for a decision it has no
+  # business making. A customer opens a case through the orchestrator because that is the only
+  # door, and this is the only call that goes through it.
+  support:
+    base-url: ${SERVICE_09_URL:http://localhost:9009}
+
+  # WHO OWNS THE PRODUCT CATALOGUE. Not us: the customer's product picker and the "how much
+  # would you like" bound are read live from this service, because it is the one that rejects an
+  # application naming a code or a limit it does not hold. See ProductCatalogue.
+  catalogue:
+    service-id: ${CATALOGUE_SERVICE_ID:neo01}
+
   generator:
     # OFF at boot on purpose: the orchestrator dispatches to services that call back to
     # the orchestrator, so a stack coming up all at once would fire at containers that

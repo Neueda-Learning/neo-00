@@ -47,6 +47,10 @@ export const api = {
 
   services: () => request('/api/v1/services'),
 
+  // The live product catalogue, proxied from the module that owns it. An empty list means that
+  // module is unreachable — the picker falls back to its own copy rather than showing nothing.
+  products: () => request('/api/v1/products'),
+
   generator: () => request('/api/v1/generator'),
   setGenerator: (body) =>
     request('/api/v1/generator', { method: 'POST', body: JSON.stringify(body) }),
@@ -62,4 +66,28 @@ export const api = {
   // Send the step a parked journey is waiting on. 409 if it is not parked, which the
   // request helper surfaces as the orchestrator's own message.
   proceed: (id) => request(`/api/v1/applications/${id}/proceed`, { method: 'POST' }),
+
+  // ---- the customer's own two actions ----
+  //
+  // Both go through the orchestrator to the module that owns them. A browser could call those
+  // modules directly, but then this page would need their addresses, their CORS policies would
+  // have to admit it, and on AWS the addresses are different again.
+
+  // The agreement's terms and whether it is this customer's to sign yet.
+  agreement: (id) => request(`/api/v1/applications/${id}/agreement`),
+  // A URL rather than a fetch: the PDF is for an <iframe> to load, not for us to hold in memory.
+  agreementDocumentUrl: (id) => `${BASE}/api/v1/applications/${id}/agreement/document`,
+  // Neither of these advances the journey. They report a fact to the module that owns the
+  // agreement; whether the journey moves is its answer, sent back the ordinary way.
+  signAgreement: (id) => request(`/api/v1/applications/${id}/agreement/sign`, { method: 'POST' }),
+  declineAgreement: (id) =>
+    request(`/api/v1/applications/${id}/agreement/decline`, { method: 'POST' }),
+
+  // Open a support case about a finished application. One per application: the support module
+  // derives its case id from the correlation id, so a second send returns the first case.
+  openSupportCase: (id, body) =>
+    request(`/api/v1/applications/${id}/support-case`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };
