@@ -362,6 +362,8 @@ refuse the request with a `400`.
 | `GET /api/v1/events?serviceId=&limit=` | the event log filtered to one service |
 | `GET /api/v1/services` | per service: in-progress count + count per status |
 | `GET /api/v1/products` | the live product catalogue, proxied from `neo01` (below) |
+| `PUT /api/v1/customers/{code}` | sign in as `AB12` — creates the code if new, returns `{customerId, isNew, items[]}` (below) |
+| `GET /api/v1/customers/{code}` | what that customer has; `404` if the code has never been used |
 | `GET /api/v1/applications/{id}/agreement` | the customer's view of their credit agreement, proxied from `neo06` (below) |
 | `GET /api/v1/applications/{id}/agreement/document` | that agreement as a PDF |
 | `POST /api/v1/applications/{id}/agreement/sign` · `/decline` | report what the customer did with it |
@@ -450,6 +452,35 @@ Three things worth knowing:
 A module's own refusal keeps its status and its sentence (`404` unknown, `409` already decided or
 expired). A module failing or being unreachable becomes a `502` in words a customer can read, never
 a status code.
+
+### Who applied — `?customerId=AB12`
+
+A customer signs in on the customer surface with a four-character code, two letters and two
+digits. `POST /api/v1/applications?customerId=AB12` records it **on the application row**, which
+is what makes "your products" possible at all.
+
+**A query parameter and deliberately not a field of the §4 application object.** Adding a key
+there would be additive rather than breaking — but every module binds that object into a typed
+record, and the orchestrator cannot verify from here that all ten of them, the sidecar and the
+template tolerate one they have never seen. **Nothing about this reaches a module**: the payload is
+stored exactly as it was sent, and a test asserts the code is absent from it.
+
+The rule has no exception — the parameter names the customer whatever the body, including on the
+no-body fixture path, which is how a customer's history is seeded without filling the form eight
+times. Omitted, the application belongs to nobody, which is right for the generator and for the
+backoffice's **+ one**. An unknown code is a `404`, never a silent create.
+
+> ⚠️ **This is identification, not authentication, and nothing is authorised by it.** There is no
+> password, so "that code is taken" and "that code is yours" are the same fact. The code decides
+> which applications a customer's own screen *lists*; `/journey`, `/agreement`, `/agreement/sign`
+> and `/support-case` all still key on the application id alone and check no ownership — anybody
+> holding an id can read and act on it. That is fine for a single-user demonstration stack, and it
+> is written down so nobody mistakes the login screen for a security boundary.
+
+An application becomes a **product** once `currentStep` is past the signature step **and** the
+journey is `COMPLETED` or still `IN_PROGRESS`. The liveness half is not optional: `currentStep` is
+never rewound, so a journey that dies at step 7 or 8 keeps that number for ever and a plain "past
+step six" test would show somebody an account number that was never opened.
 
 ---
 

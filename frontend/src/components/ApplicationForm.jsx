@@ -103,7 +103,7 @@ function toApplication(f, product) {
 }
 
 /** Step 2: the application form for the chosen product. */
-export default function ApplicationForm({ product, onBack, onSubmitted }) {
+export default function ApplicationForm({ product, customerId, onBack, onSubmitted }) {
   const [f, setF] = useState(() => defaults(product));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -118,7 +118,7 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
     setSubmitting(true);
     setError(null);
     try {
-      const created = await api.submitApplication(toApplication(f, product));
+      const created = await api.submitApplication(toApplication(f, product), customerId);
       onSubmitted(created.id);
     } catch (err) {
       setError(err.message);

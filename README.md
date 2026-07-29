@@ -189,8 +189,22 @@ for demonstrating the auto-modes.
 
 ## What you'll see
 
-**The customer's side.** *Customer journey simulation* on the landing page: pick a card, fill
-in the form, then watch the checks tick over down the left. It stops at **Agreement
+**The customer's side starts with a code.** *Customer journey simulation* asks for four
+characters — two letters and two digits, `AB12`. Make one up; as you type, the screen says whether
+it is free or already in use. There is no password, so a code that exists just means you are that
+customer: **identification, not authentication**, and nothing is authorised by it.
+
+Sign in with a code that has history and you land on **your account** — the cards you hold under
+*Your products* (limit, account number, card digits, agreement) and anything still being decided
+under *Your applications*. Both offer **request support**, and show the reply when it comes. An
+application becomes a product once you have signed the agreement. Log out, sign in again with the
+same code, and it is all still there; nothing is stored in the browser, because the code is the
+identity.
+
+Applications the generator makes belong to nobody, so they fill the operator's board and appear on
+no customer's account.
+
+Then: pick a card, fill in the form, and watch the checks tick over down the left. It stops at **Agreement
 Management — waiting for you**, shows the credit agreement as a PDF, and waits. Sign it and
 the last two steps run; when the journey completes, `neo-09`'s support form appears so the
 customer can raise a ticket about the application they have just finished.

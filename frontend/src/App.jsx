@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import LandingScreen from './components/LandingScreen.jsx';
+import LoginScreen from './components/LoginScreen.jsx';
 import CustomerJourney from './components/CustomerJourney.jsx';
 import BackofficeScreen from './components/BackofficeScreen.jsx';
 
@@ -9,20 +10,52 @@ import BackofficeScreen from './components/BackofficeScreen.jsx';
  * active screen mounts (and only it polls the API).
  *
  *   'landing'    → the two choices
- *   'journey'    → Customer Journey Simulation (product → form → live status)
+ *   'login'      → the customer's four-character code
+ *   'journey'    → Customer Journey Simulation (their account → product → form → live status)
  *   'backoffice' → Backoffice Overview Simulation (the two operator screens)
  *
  * Each screen renders its own AppShell, because the bar differs: the customer sees a
- * progress tracker, the operator sees health and the generator controls.
+ * progress tracker and their own code, the operator sees health and the generator controls.
+ *
+ * <p><b>Only the customer side asks who you are.</b> The backoffice is the bank's own view and a
+ * customer code means nothing there. Signing in is held here rather than inside the journey so
+ * that CustomerJourney only ever mounts with a real code and never has to handle its absence.</p>
+ *
+ * <p>Nothing is persisted: closing the tab signs you out. The code IS the identity, so signing in
+ * again brings everything back — which is why losing it costs nothing.</p>
  */
 export default function App() {
   const [view, setView] = useState('landing');
+  const [customer, setCustomer] = useState(null);
   const goHome = () => setView('landing');
 
   return (
     <>
-      {view === 'landing' && <LandingScreen onChoose={setView} />}
-      {view === 'journey' && <CustomerJourney onHome={goHome} />}
+      {view === 'landing' && (
+        <LandingScreen onChoose={(next) => setView(next === 'journey' ? 'login' : next)} />
+      )}
+
+      {view === 'login' && (
+        <LoginScreen
+          onSignedIn={(signedIn) => {
+            setCustomer(signedIn);
+            setView('journey');
+          }}
+          onHome={goHome}
+        />
+      )}
+
+      {view === 'journey' && customer && (
+        <CustomerJourney
+          customerId={customer.customerId}
+          initialItems={customer.items}
+          onLogout={() => {
+            setCustomer(null);
+            setView('landing');
+          }}
+        />
+      )}
+
       {view === 'backoffice' && <BackofficeScreen onHome={goHome} />}
     </>
   );

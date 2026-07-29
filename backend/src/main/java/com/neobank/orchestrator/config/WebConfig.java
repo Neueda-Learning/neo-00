@@ -27,8 +27,12 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
-                .allowedOriginPatterns(allowedOriginPatterns)
-                .allowedMethods("GET", "POST", "OPTIONS")
+                // PUT is here because signing in is one, and it was the FIRST put a browser ever
+                // made: the other one in this system — a module reporting its status — comes from
+                // a Java client, which sends no Origin header, so CORS never applied to it and
+                // the gap was invisible. Chrome got a bare 403 while the identical curl got 200,
+                // which is precisely the failure the note above describes.
+                .allowedMethods("GET", "POST", "PUT", "OPTIONS")
                 .allowedHeaders("*");
     }
 }

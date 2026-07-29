@@ -34,11 +34,23 @@ export const api = {
   // Backoffice "+ one": no body, the orchestrator generates a fixture applicant.
   createApplication: () => request('/api/v1/applications', { method: 'POST' }),
   // Customer journey: the attendee's filled-in Application object (api-contract §4 shape).
-  submitApplication: (application) =>
-    request('/api/v1/applications', {
-      method: 'POST',
-      body: JSON.stringify(application),
-    }),
+  // Who is applying rides as a query parameter, not a field of the body — the body is the object
+  // ten modules bind into typed records, and it is not ours to add keys to.
+  submitApplication: (application, customerId) =>
+    request(
+      '/api/v1/applications' + (customerId ? `?customerId=${customerId}` : ''),
+      { method: 'POST', body: JSON.stringify(application) }
+    ),
+
+  // ---- signing in ----
+
+  // Idempotent: creates the code if it is new, and either way returns everything that customer
+  // has. `isNew` off THIS response is what the greeting reads — never the typing hint below,
+  // which is a separate request and can disagree with it.
+  signIn: (code) => request(`/api/v1/customers/${code}`, { method: 'PUT' }),
+  // What a known customer has. Throws on 404, which is how the login hint tells "already in use"
+  // from "free" — see LoginScreen for why only a 404 may be read that way.
+  customer: (code) => request(`/api/v1/customers/${code}`),
 
   events: (serviceId, limit = 200) =>
     request(

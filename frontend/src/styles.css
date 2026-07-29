@@ -140,6 +140,25 @@
   color: var(--ds-color-accent-ink);
 }
 
+/* ── Who is signed in ────────────────────────────────────────────────────── */
+/* The code sits in the bar on every customer screen. Monospaced and boxed like a Tag, because
+   it is a machine token the customer has to be able to read back to us. */
+.customer-code {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-text-xs);
+  letter-spacing: 0.08em;
+  padding: 2px var(--ds-space-2);
+  border: var(--ds-border-width) solid var(--ds-color-border);
+  border-radius: var(--ds-radius-sm);
+  color: var(--ds-color-text);
+}
+
+.customer-home__heading {
+  font-family: var(--ds-font-display);
+  font-size: var(--ds-text-xl);
+  margin-bottom: var(--ds-space-4);
+}
+
 /* ── The live journey: checks down the left, what to do on the right ─────── */
 /* Not an AppShell `side`: that slot is the app's navigation, and the design system's rule is
    `nav` OR `side`, never both. This is content — the state of one application — so it is a

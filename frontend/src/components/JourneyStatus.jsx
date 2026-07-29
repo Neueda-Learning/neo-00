@@ -6,6 +6,7 @@ import {
   Card,
   EmptyState,
   FormActions,
+  KeyValue,
   PageHeader,
   Spinner,
   Stack,
@@ -44,7 +45,7 @@ const OUTCOME = {
 };
 
 /** Step 3: poll the orchestrator and show the live journey to a decision. */
-export default function JourneyStatus({ applicationId, product, onRestart, onHome }) {
+export default function JourneyStatus({ applicationId, product, kind, onRestart, onHome }) {
   const [detail, setDetail] = useState(null);
   const [services, setServices] = useState([]);
   const [error, setError] = useState(null);
@@ -103,6 +104,11 @@ export default function JourneyStatus({ applicationId, product, onRestart, onHom
   // flag: a hold cleared by a timeout or an expiry must not leave a live Sign button on a
   // journey that has already ended.
   const signing = !settled && detail?.awaitingSignature === true;
+  // Whether this is a card rather than an application is the ORCHESTRATOR's call — only it knows
+  // which step is the signature step, and that is configuration. So it is passed in when this
+  // screen is opened from the customer's account. Reached straight from the form there is no
+  // item yet, and COMPLETED is the one state that is unambiguously a card either way.
+  const isProduct = kind === 'PRODUCT' || status === 'COMPLETED';
 
   return (
     <Stack gap={5}>
@@ -155,7 +161,12 @@ export default function JourneyStatus({ applicationId, product, onRestart, onHom
 
           {signing && <SignAgreement applicationId={applicationId} />}
 
-          {status === 'COMPLETED' && <SupportTicketForm applicationId={applicationId} />}
+          {isProduct && <YourCard detail={detail} applicationId={applicationId} />}
+
+          {/* Support once there is something to ask about: the agreement is with them, or the
+              journey has finished one way or another. Not during the automated steps, which take
+              seconds and where the only honest answer is "it is being checked". */}
+          {(signing || settled) && <SupportTicketForm applicationId={applicationId} />}
 
           <Card title="What is happening" subtitle={settled ? 'complete' : 'updated every second'}>
             {!detail && !error && <EmptyState flush title="Loading…" />}
@@ -189,9 +200,51 @@ export default function JourneyStatus({ applicationId, product, onRestart, onHom
           Apply for another
         </Button>
         <Button variant="ghost" onClick={onHome}>
-          ← Home
+          ← Your account
         </Button>
       </FormActions>
     </Stack>
+  );
+}
+
+/**
+ * The card itself, once there is one.
+ *
+ * <p>Every line comes from a different module's report and any of them may not have arrived yet,
+ * so each has its own absent-state rather than one shared "not ready". The card number in
+ * particular has no source at all today — {@code panLast4} belongs to the card-issuing module,
+ * which has not implemented it — so it reads as pending and will fill itself in the day that
+ * changes, with no edit here.</p>
+ */
+function YourCard({ detail, applicationId }) {
+  const outputs = detail.outputs ?? {};
+  const settling = detail.overallStatus === 'IN_PROGRESS';
+
+  return (
+    <Card
+      title="Your card"
+      subtitle={settling ? 'we are setting it up now' : 'active'}
+      headEnd={<Badge tone={settling ? 'info' : 'positive'}>{settling ? 'ON ITS WAY' : 'ACTIVE'}</Badge>}
+      foot={
+        <Button
+          variant="secondary"
+          onClick={() => window.open(api.agreementDocumentUrl(applicationId), '_blank')}
+        >
+          View your agreement
+        </Button>
+      }
+    >
+      <KeyValue
+        items={[
+          ['Product', detail.productCode?.replace('CREDIT_CARD_', '') ?? '—'],
+          // The limit GRANTED, never the one asked for — they are different numbers and this is
+          // the one that matters.
+          ['Credit limit', money(outputs.approvedLimit) ?? 'being confirmed'],
+          ['APR', outputs.apr == null ? '—' : `${outputs.apr}%`],
+          ['Account number', outputs.accountId ?? 'being set up'],
+          ['Card number', outputs.panLast4 ? `•••• ${outputs.panLast4}` : 'issued, number to follow'],
+        ]}
+      />
+    </Card>
   );
 }

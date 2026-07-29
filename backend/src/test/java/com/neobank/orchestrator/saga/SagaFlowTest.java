@@ -283,7 +283,7 @@ class SagaFlowTest {
     void demoSteppingParksTheJourneyBeforeTheVeryFirstDispatch() {
         engine.setDemoStepping(true);
 
-        String id = generator.createAndStart().getId();
+        String id = generator.createAndStart((String) null).getId();
 
         ApplicationDetail detail = detail(id);
         assertThat(detail.pendingStep()).isEqualTo(1);
@@ -297,7 +297,7 @@ class SagaFlowTest {
     @Test
     void proceedSendsTheParkedStepAndTheJourneyThenParksAgain() {
         engine.setDemoStepping(true);
-        String id = generator.createAndStart().getId();
+        String id = generator.createAndStart((String) null).getId();
 
         assertThat(engine.proceed(id)).contains(1);
         awaitDispatchOf(id, 1);
@@ -328,7 +328,7 @@ class SagaFlowTest {
     @Test
     void aParkedJourneyIsNotSweptByTheTimeout() {
         engine.setDemoStepping(true);
-        String id = generator.createAndStart().getId();
+        String id = generator.createAndStart((String) null).getId();
         assertThat(detail(id).pendingStep()).isEqualTo(1);
 
         engine.sweepTimeouts(Duration.ZERO);
@@ -464,7 +464,7 @@ class SagaFlowTest {
     @Test
     void aRejectionInDemoModeEndsTheJourneyRatherThanParkingIt() {
         engine.setDemoStepping(true);
-        String id = generator.createAndStart().getId();
+        String id = generator.createAndStart((String) null).getId();
         engine.proceed(id);
         awaitDispatchOf(id, 1);
 
@@ -479,8 +479,8 @@ class SagaFlowTest {
     @Test
     void turningDemoSteppingOffReleasesEveryParkedJourney() {
         engine.setDemoStepping(true);
-        String first = generator.createAndStart().getId();
-        String second = generator.createAndStart().getId();
+        String first = generator.createAndStart((String) null).getId();
+        String second = generator.createAndStart((String) null).getId();
 
         engine.setDemoStepping(false);
 
@@ -629,7 +629,7 @@ class SagaFlowTest {
     // ---- helpers ----
 
     private String startAndAwaitDispatch() {
-        String id = generator.createAndStart().getId();
+        String id = generator.createAndStart((String) null).getId();
         awaitDispatchOf(id, 1);
         return id;
     }
