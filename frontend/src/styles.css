@@ -148,9 +148,12 @@
   font-size: var(--ds-text-xs);
   letter-spacing: 0.08em;
   padding: 2px var(--ds-space-2);
-  border: var(--ds-border-width) solid var(--ds-color-border);
+  /* The NAV's ink, not the page's. --ds-color-text is sized for the light content surface and
+     renders as near-black on the dark bar — legible in a screenshot only if you know it is
+     there. The bar has its own pair of tokens for exactly this. */
+  border: var(--ds-border-width) solid var(--ds-color-nav-ink-muted);
   border-radius: var(--ds-radius-sm);
-  color: var(--ds-color-text);
+  color: var(--ds-color-nav-ink);
 }
 
 .customer-home__heading {
