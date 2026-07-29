@@ -183,6 +183,28 @@ The toggle in the header starts and stops the orchestrator creating applications
 makes a single one. It starts **stopped** — the orchestrator calls modules that call it
 back, so it must not fire before the stack is up.
 
+## Demo mode: walking one application by hand
+
+A whole journey takes about 25 seconds, which is no time at all to explain it. **Stepping**,
+the second header toggle, holds every application before **every** dispatch — the first
+included — so an eight-step journey is eight clicks. A held row shows
+**▶ Step N · neoNN** where its outcome would be; press it and that step goes out.
+
+Turn the generator **off** first, or every application it creates parks too. Switching
+Stepping back off releases everything currently held, which is the way out if a demo is
+abandoned half-way.
+
+> **The button releases a dispatch — it never answers for a module.** Each service still
+> receives the same envelope, decides for itself and reports its own status. You are slowing
+> the real journey down, not driving it. That distinction is worth saying out loud while
+> demonstrating it: the teams in the room wrote the code that is still doing the deciding.
+
+A held journey is deliberately exempt from the 30-second callback timeout — it is silent
+because nobody was asked, not because a module went quiet.
+
+`DEMO_STEPPING=true` sets it at boot; `GET /info` reports it, which is the first thing to
+check when a stack looks stuck.
+
 ## How it works
 
 ```

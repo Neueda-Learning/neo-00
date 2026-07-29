@@ -68,6 +68,18 @@ public class Application {
     @Column(name = "current_step", nullable = false)
     private int currentStep;
 
+    /**
+     * Demo stepping: {@code null} means the journey runs itself, a number means it is parked
+     * and this is the step that will be dispatched when an operator releases it.
+     *
+     * <p>One nullable column rather than a boolean plus a target, because the target is not
+     * derivable from {@code currentStep}: parked before the first dispatch it is 1 while
+     * {@code currentStep} is still 0, and parked mid-journey it equals {@code currentStep},
+     * which {@link com.neobank.orchestrator.saga.SagaStore} advances when the callback lands.</p>
+     */
+    @Column(name = "pending_step")
+    private Integer pendingStep;
+
     @Column(name = "overall_status", nullable = false, length = 24)
     private String overallStatus;
 
@@ -143,6 +155,20 @@ public class Application {
     public void setCurrentStep(int currentStep) {
         this.currentStep = currentStep;
         this.updatedAt = Instant.now();
+    }
+
+    public Integer getPendingStep() {
+        return pendingStep;
+    }
+
+    public void setPendingStep(Integer pendingStep) {
+        this.pendingStep = pendingStep;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Parked in demo mode, waiting for someone to press Proceed. */
+    public boolean isAwaitingOperator() {
+        return pendingStep != null;
     }
 
     public String getOverallStatus() {

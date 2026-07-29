@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.function.BooleanSupplier;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -246,6 +247,105 @@ class SagaFlowTest {
                 new ApplicationStatusUpdate("neo01", "ACCEPTED", "?"));
         // Reaching here without an exception is the assertion: a stray callback must not
         // break the endpoint that every service depends on.
+    }
+
+    // ---- demo stepping ----
+
+    /**
+     * The toggle lives on a shared bean, so a test that left it on would silently park every
+     * test after it. Turning it off also releases anything this test parked.
+     */
+    @AfterEach
+    void demoSteppingOff() {
+        engine.setDemoStepping(false);
+    }
+
+    @Test
+    void demoSteppingParksTheJourneyBeforeTheVeryFirstDispatch() {
+        engine.setDemoStepping(true);
+
+        String id = generator.createAndStart().getId();
+
+        ApplicationDetail detail = detail(id);
+        assertThat(detail.pendingStep()).isEqualTo(1);
+        assertThat(detail.overallStatus()).isEqualTo(Application.IN_PROGRESS);
+        assertThat(eventTypes(detail)).containsExactly("JOURNEY_STARTED", "AWAITING_OPERATOR");
+        // No special case for the first step: eight steps means eight clicks.
+        sleep(200);
+        assertThat(dispatchCount(detail(id), 1)).isZero();
+    }
+
+    @Test
+    void proceedSendsTheParkedStepAndTheJourneyThenParksAgain() {
+        engine.setDemoStepping(true);
+        String id = generator.createAndStart().getId();
+
+        assertThat(engine.proceed(id)).contains(1);
+        awaitDispatchOf(id, 1);
+        assertThat(detail(id).pendingStep()).isNull();
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "ACCEPTED", "ok"));
+
+        // Parked again — and step 2 stays unsent until the next click.
+        assertThat(detail(id).pendingStep()).isEqualTo(2);
+        sleep(200);
+        assertThat(dispatchCount(detail(id), 2)).isZero();
+    }
+
+    @Test
+    void proceedOnAJourneyThatIsNotParkedDoesNothing() {
+        String id = startAndAwaitDispatch();
+
+        assertThat(engine.proceed(id)).isEmpty();
+        assertThat(engine.proceed("APP-NOPE")).isEmpty();
+    }
+
+    /**
+     * The one that would kill a demo. A parked journey is silent because nothing was asked of
+     * anybody — the sweeper must not read that as a module gone quiet and fail it thirty
+     * seconds into the first pause.
+     */
+    @Test
+    void aParkedJourneyIsNotSweptByTheTimeout() {
+        engine.setDemoStepping(true);
+        String id = generator.createAndStart().getId();
+        assertThat(detail(id).pendingStep()).isEqualTo(1);
+
+        store.sweepTimeouts(Duration.ZERO);
+
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.IN_PROGRESS);
+        assertThat(eventTypes(detail(id))).doesNotContain("TIMEOUT");
+    }
+
+    /** Only ACCEPTED parks, so a refusal still ends where it happened and offers no button. */
+    @Test
+    void aRejectionInDemoModeEndsTheJourneyRatherThanParkingIt() {
+        engine.setDemoStepping(true);
+        String id = generator.createAndStart().getId();
+        engine.proceed(id);
+        awaitDispatchOf(id, 1);
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "REJECTED", "no"));
+
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.REJECTED);
+        assertThat(detail(id).pendingStep()).isNull();
+    }
+
+    /** The way out of an abandoned demo: everything already parked goes on its way. */
+    @Test
+    void turningDemoSteppingOffReleasesEveryParkedJourney() {
+        engine.setDemoStepping(true);
+        String first = generator.createAndStart().getId();
+        String second = generator.createAndStart().getId();
+
+        engine.setDemoStepping(false);
+
+        awaitDispatchOf(first, 1);
+        awaitDispatchOf(second, 1);
+        assertThat(detail(first).pendingStep()).isNull();
+        assertThat(detail(second).pendingStep()).isNull();
     }
 
     // ---- views ----

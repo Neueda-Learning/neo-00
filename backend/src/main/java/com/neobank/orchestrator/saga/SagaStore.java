@@ -123,6 +123,67 @@ public class SagaStore {
                 readPayload(app.getPayloadJson())));
     }
 
+    /**
+     * Demo stepping: hold the journey here instead of dispatching {@code step}, and say so in
+     * the log. A no-op on an unknown or terminal application — a journey that ended has nothing
+     * left to park.
+     *
+     * <p>The step is <em>stored</em>, not inferred, because {@link #release} has to know what to
+     * dispatch and {@code currentStep} does not answer that before the first dispatch.</p>
+     */
+    @Transactional
+    public void park(String applicationId, int step) {
+        Application app = applications.findById(applicationId).orElse(null);
+        if (app == null || app.isTerminal()) {
+            return;
+        }
+        ServiceDef service = registry.byStep(step);
+        app.setPendingStep(step);
+        applications.save(app);
+        events.save(new ApplicationEvent(applicationId, step,
+                service == null ? null : service.serviceId(),
+                ApplicationEvent.AWAITING_OPERATOR, null,
+                "demo mode — waiting for an operator to send step " + step
+                        + (service == null ? "" : " to " + service.name())));
+        log.info("Application {} parked before step {} — demo stepping is on", applicationId, step);
+    }
+
+    /**
+     * Let a parked journey go: clear the hold and hand back the step to dispatch. Empty unless
+     * the application is parked and still running.
+     *
+     * <p><b>The clear and the read are one transaction, and both happen before anything is
+     * dispatched.</b> A row left parked forever is also un-sweepable forever — the timeout
+     * deliberately skips parked journeys — whereas a cleared row whose dispatch is then lost
+     * degrades to the ordinary 30-second timeout, which is the failure we already handle.</p>
+     */
+    @Transactional
+    public Optional<Integer> release(String applicationId) {
+        Application app = applications.findById(applicationId).orElse(null);
+        if (app == null || app.isTerminal() || !app.isAwaitingOperator()) {
+            return Optional.empty();
+        }
+        int step = app.getPendingStep();
+        ServiceDef service = registry.byStep(step);
+        app.setPendingStep(null);
+        applications.save(app);
+        events.save(new ApplicationEvent(applicationId, step,
+                service == null ? null : service.serviceId(),
+                ApplicationEvent.RELEASED_BY_OPERATOR, null,
+                "released by an operator — sending step " + step));
+        return Optional.of(step);
+    }
+
+    /** Every journey currently waiting on a click, oldest first. Feeds the release-all path. */
+    @Transactional(readOnly = true)
+    public List<String> parkedApplicationIds() {
+        return applications.findByOverallStatus(Application.IN_PROGRESS).stream()
+                .filter(Application::isAwaitingOperator)
+                .sorted(java.util.Comparator.comparing(Application::getCreatedAt))
+                .map(Application::getId)
+                .toList();
+    }
+
     @Transactional
     public void recordAck(String applicationId, int step, String serviceId, String comment) {
         events.save(new ApplicationEvent(applicationId, step, serviceId,
@@ -263,6 +324,12 @@ public class SagaStore {
 
         int swept = 0;
         for (Application app : inFlight) {
+            // A parked journey is silent BY DESIGN — nothing has been asked of any service, so
+            // there is nobody to give up on. Without this the demo dies thirty seconds into the
+            // first pause, and it looks exactly like a broken module.
+            if (app.isAwaitingOperator()) {
+                continue;
+            }
             Instant seen = lastSeen.getOrDefault(app.getId(), app.getCreatedAt());
             if (seen != null && seen.isBefore(cutoff)) {
                 String serviceId = lastService.get(app.getId());
@@ -404,8 +471,10 @@ public class SagaStore {
                 case ApplicationEvent.TIMEOUT, ApplicationEvent.DISPATCH_FAILED ->
                         statusByStep.put(e.getStepIndex(), "TIMEOUT");
                 // A PROGRESS_REPORTED row lands here on purpose: the step is still waiting, so
-                // its dot must stay in-flight rather than be overwritten.
-                default -> { /* journey markers and progress reports carry no step status */ }
+                // its dot must stay in-flight rather than be overwritten. AWAITING_OPERATOR and
+                // RELEASED_BY_OPERATOR land here for the opposite reason: they are about a step
+                // that has not been sent yet, which must stay pending.
+                default -> { /* journey markers, progress reports and demo holds carry no status */ }
             }
         }
         List<StepView> steps = registry.ordered().stream()
@@ -414,7 +483,8 @@ public class SagaStore {
                 .toList();
         return new ApplicationRow(app.getId(), app.getApplicantName(), app.getProductCode(),
                 app.getRequestedLimit(), app.getChannel(), app.getCurrentStep(),
-                app.getOverallStatus(), app.getCreatedAt(), app.getUpdatedAt(), steps);
+                app.getPendingStep(), app.getOverallStatus(), app.getCreatedAt(),
+                app.getUpdatedAt(), steps);
     }
 
     /** Requests that went out and have not been answered, per service. */

@@ -56,7 +56,7 @@ class ApplicationControllerTest {
 
     private void stubDetail(String id, String applicant, String product) {
         when(store.detail(id)).thenReturn(Optional.of(
-                new ApplicationDetail(id, applicant, product, 8000, "WEB", 0,
+                new ApplicationDetail(id, applicant, product, 8000, "WEB", 0, null,
                         Application.IN_PROGRESS, Map.of(), null, null, List.of())));
     }
 
@@ -222,5 +222,30 @@ class ApplicationControllerTest {
 
         verify(store).board(200);
         verify(store, never()).applicationsByName(any(), anyInt());
+    }
+
+    // ---- POST /{id}/proceed: the demo button ----------------------------------------------
+
+    @Test
+    void proceedReportsTheStepItDispatched() throws Exception {
+        when(engine.proceed("APP-0001")).thenReturn(Optional.of(3));
+
+        mvc.perform(post("/api/v1/applications/{id}/proceed", "APP-0001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.applicationId").value("APP-0001"))
+                .andExpect(jsonPath("$.dispatchedStep").value(3));
+    }
+
+    /**
+     * 409 rather than 404: the application usually exists, it simply is not parked — which is
+     * what an operator sees when demo stepping is off, and the message has to say so.
+     */
+    @Test
+    void proceedOnAnApplicationThatIsNotParkedIs409() throws Exception {
+        when(engine.proceed("APP-0001")).thenReturn(Optional.empty());
+
+        mvc.perform(post("/api/v1/applications/{id}/proceed", "APP-0001"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409));
     }
 }

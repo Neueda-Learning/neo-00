@@ -52,6 +52,16 @@ public final class SagaDtos {
     public record GeneratorRequest(Boolean enabled, Long intervalMs) {
     }
 
+    /**
+     * The demo-stepping toggle: while it is on, no step is dispatched without an operator
+     * pressing Proceed. {@code parked} is how many journeys are waiting on a click right now.
+     */
+    public record DemoState(boolean enabled, long parked) {
+    }
+
+    public record DemoRequest(Boolean enabled) {
+    }
+
     // ---- views: orchestrator → front end ----
 
     /** One of the ten dots on a board row. */
@@ -63,6 +73,11 @@ public final class SagaDtos {
         public static final String IN_FLIGHT = "in-flight";
     }
 
+    /**
+     * {@code pendingStep} is non-null only while demo stepping has this journey parked, and is
+     * the step the Proceed button will send. The front end uses its presence to decide whether
+     * to draw that button at all.
+     */
     public record ApplicationRow(
             String id,
             String applicantName,
@@ -70,6 +85,7 @@ public final class SagaDtos {
             Integer requestedLimit,
             String channel,
             int currentStep,
+            Integer pendingStep,
             String overallStatus,
             Instant createdAt,
             Instant updatedAt,
@@ -112,6 +128,7 @@ public final class SagaDtos {
             Integer requestedLimit,
             String channel,
             int currentStep,
+            Integer pendingStep,
             String overallStatus,
             Map<String, Object> application,
             Instant createdAt,
@@ -122,8 +139,8 @@ public final class SagaDtos {
                                            List<ApplicationEvent> events) {
             return new ApplicationDetail(
                     a.getId(), a.getApplicantName(), a.getProductCode(), a.getRequestedLimit(),
-                    a.getChannel(), a.getCurrentStep(), a.getOverallStatus(), application,
-                    a.getCreatedAt(), a.getUpdatedAt(),
+                    a.getChannel(), a.getCurrentStep(), a.getPendingStep(), a.getOverallStatus(),
+                    application, a.getCreatedAt(), a.getUpdatedAt(),
                     events.stream().map(EventView::from).toList());
         }
     }

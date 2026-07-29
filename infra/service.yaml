@@ -235,6 +235,10 @@ Resources:
               - { Name: STEP_DELAY, Value: "1s" }
               - { Name: CALLBACK_TIMEOUT, Value: "30s" }
               - { Name: GENERATOR_ENABLED, Value: "false" }
+              # Demo stepping: off at boot, flipped from the backoffice when it is wanted.
+              # Only correct while DesiredCount is 1 — the flag is in memory, so two tasks
+              # would park on one and auto-advance on the other.
+              - { Name: DEMO_STEPPING, Value: "false" }
               # The saga. Spring Boot does NOT merge collections across property sources, so
               # the highest-precedence source that supplies orchestrator.services supplies
               # ALL of it — these thirty variables replace application.yml's list entirely

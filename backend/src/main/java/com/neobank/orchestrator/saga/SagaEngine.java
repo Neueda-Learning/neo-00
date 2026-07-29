@@ -7,6 +7,8 @@ import com.neobank.orchestrator.saga.SagaStore.DispatchTarget;
 import com.neobank.orchestrator.saga.ServiceRegistry.ServiceDef;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +35,17 @@ import org.springframework.web.client.RestClient;
  * {@link StatusVocabulary} translates. {@code REJECTED} and {@code REFERRED} end the journey where
  * they happen, so the remaining steps are never dispatched. {@code IN_PROGRESS} does neither: the
  * journey keeps waiting.</p>
+ *
+ * <h2>Demo stepping</h2>
+ *
+ * <p>With {@code orchestrator.demo-stepping} on, every arrow above that says "dispatch" waits for
+ * a person instead: the journey is parked and only {@code POST /api/v1/applications/{id}/proceed}
+ * sends the next step. It is one rule with no special case — the first dispatch waits too, so a
+ * demo of an eight-step journey is eight clicks.</p>
+ *
+ * <p><b>The button gates the dispatch; it never speaks for a module.</b> Each service still does
+ * its own work and reports its own status exactly as in automatic mode, so what an audience sees
+ * is the real journey slowed down, not a puppet of one.</p>
  */
 @Service
 public class SagaEngine {
@@ -46,22 +59,39 @@ public class SagaEngine {
     private final Duration stepDelay;
     private final String command;
 
+    /**
+     * In memory on purpose, exactly like {@link com.neobank.orchestrator.generator.GeneratorService}
+     * — it has to be flippable mid-demo without restarting a stack.
+     *
+     * <p><b>This is only correct while one orchestrator task runs</b> ({@code DesiredCount} is 1 in
+     * {@code infra/service.yaml}). The park decision is taken by whichever task receives a module's
+     * status update, so with two tasks half the steps would auto-advance and the demo would
+     * silently half-work. If the orchestrator is ever scaled out, this flag has to become a row.</p>
+     */
+    private final AtomicBoolean demoStepping;
+
     public SagaEngine(SagaStore store,
                       ServiceRegistry registry,
                       RestClient restClient,
                       TaskScheduler scheduler,
                       @Value("${orchestrator.step-delay:1s}") Duration stepDelay,
-                      @Value("${orchestrator.command:process-application}") String command) {
+                      @Value("${orchestrator.command:process-application}") String command,
+                      @Value("${orchestrator.demo-stepping:false}") boolean demoSteppingAtBoot) {
         this.store = store;
         this.registry = registry;
         this.restClient = restClient;
         this.scheduler = scheduler;
         this.stepDelay = stepDelay;
         this.command = command;
+        this.demoStepping = new AtomicBoolean(demoSteppingAtBoot);
     }
 
-    /** Send the application to the first service. */
+    /** Send the application to the first service — or park it there, in demo mode. */
     public void startJourney(String applicationId) {
+        if (demoStepping.get()) {
+            store.park(applicationId, 1);
+            return;
+        }
         scheduleDispatch(applicationId, 1, Duration.ZERO);
     }
 
@@ -78,9 +108,55 @@ public class SagaEngine {
     public void handleApplicationStatusUpdate(String applicationId, ApplicationStatusUpdate update) {
         CallbackOutcome outcome = store.recordApplicationStatusUpdate(applicationId, update);
         if (outcome instanceof CallbackOutcome.Advance advance) {
+            if (demoStepping.get()) {
+                // Only Advance parks, and only a canonical ACCEPTED produces an Advance — so a
+                // journey that was rejected, referred or answered with a word we do not know
+                // still ends or stalls where it did, and no Proceed button appears for it.
+                store.park(applicationId, advance.nextStep());
+                return;
+            }
             // The 1s pause between services — the visible rhythm of the board.
             scheduleDispatch(applicationId, advance.nextStep(), stepDelay);
         }
+    }
+
+    /**
+     * Send the step a parked journey is waiting on. Empty if it is not parked — unknown, already
+     * running, or finished — which the controller answers as a {@code 409}.
+     */
+    public Optional<Integer> proceed(String applicationId) {
+        Optional<Integer> step = store.release(applicationId);
+        step.ifPresent(s -> {
+            log.info("Operator released {} — dispatching step {}", applicationId, s);
+            scheduleDispatch(applicationId, s, Duration.ZERO);
+        });
+        return step;
+    }
+
+    public SagaDtos.DemoState demoState() {
+        return new SagaDtos.DemoState(demoStepping.get(), store.parkedApplicationIds().size());
+    }
+
+    /**
+     * Turn demo stepping on or off.
+     *
+     * <p><b>Turning it off releases everything already parked</b> — the way out if a demo is
+     * abandoned half-way, or if the generator was left running and filled the board with journeys
+     * waiting on a click that is never coming.</p>
+     */
+    public SagaDtos.DemoState setDemoStepping(boolean enabled) {
+        if (demoStepping.getAndSet(enabled) != enabled) {
+            log.info("Demo stepping {}", enabled ? "ON — every step now waits for an operator"
+                    : "OFF — journeys advance on their own again");
+        }
+        if (!enabled) {
+            store.parkedApplicationIds().forEach(this::proceed);
+        }
+        return demoState();
+    }
+
+    public boolean isDemoStepping() {
+        return demoStepping.get();
     }
 
     /** Fail anything that has gone quiet. Called by {@link TimeoutSweeper}. */

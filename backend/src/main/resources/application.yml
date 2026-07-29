@@ -36,6 +36,17 @@ orchestrator:
   callback-timeout: ${CALLBACK_TIMEOUT:30s}
   sweep-interval-ms: ${SWEEP_INTERVAL_MS:5000}
 
+  # DEMO STEPPING. Off, and normally left off: applications walk the journey by themselves.
+  #
+  # Turned on — here, or from the switch in the backoffice — no step is dispatched until
+  # someone presses Proceed on the board, INCLUDING the first, so an eight-step journey is
+  # eight clicks. It exists so the journey can be narrated in front of an audience.
+  #
+  # The button releases a dispatch; it never answers on a module's behalf. Every service
+  # still does its own work and reports its own status. Turning the toggle back off releases
+  # everything currently parked.
+  demo-stepping: ${DEMO_STEPPING:false}
+
   generator:
     # OFF at boot on purpose: the orchestrator dispatches to services that call back to
     # the orchestrator, so a stack coming up all at once would fire at containers that

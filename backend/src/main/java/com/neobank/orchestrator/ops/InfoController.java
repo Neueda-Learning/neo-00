@@ -31,6 +31,9 @@ public class InfoController {
         body.put("steps", registry.size());
         body.put("stepDelay", engine.stepDelay().toString());
         body.put("callbackTimeout", callbackTimeout);
+        // On means every dispatch is waiting for an operator — worth seeing here, because a
+        // stack that looks stuck is usually a demo toggle somebody left on.
+        body.put("demoStepping", engine.isDemoStepping());
         body.put("terminalStatuses", List.of(SagaEngine.terminalStatuses()));
         body.put("sequence", registry.ordered().stream()
                 .map(s -> Map.of("step", s.step(), "serviceId", s.serviceId(),

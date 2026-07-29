@@ -44,6 +44,11 @@ export function eventTone(event) {
   if (event.eventType === 'TIMEOUT' || event.eventType === 'DISPATCH_FAILED') {
     return TONES.NEGATIVE;
   }
+  // Demo stepping. The hold is a warning — the journey is stopped and only a person
+  // restarts it; the release is just news. Neither carries a status, so without these
+  // two both would render as anonymous grey on the very screen being demonstrated.
+  if (event.eventType === 'AWAITING_OPERATOR') return TONES.WARNING;
+  if (event.eventType === 'RELEASED_BY_OPERATOR') return TONES.INFO;
   return TONES.NEUTRAL;
 }
 

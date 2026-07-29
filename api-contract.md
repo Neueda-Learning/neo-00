@@ -270,6 +270,8 @@ refuse the request with a `400`.
 | `GET /api/v1/events?serviceId=&limit=` | the event log filtered to one service |
 | `GET /api/v1/services` | per service: in-progress count + count per status |
 | `GET /api/v1/generator` · `POST /api/v1/generator` | the start/stop toggle `{enabled, intervalMs}` |
+| `GET /api/v1/demo-mode` · `POST /api/v1/demo-mode` | demo stepping `{enabled, parked}` (below) |
+| `POST /api/v1/applications/{id}/proceed` | send the step a parked journey is waiting on (below) |
 | `PUT /api/v1/applications/{id}` | where services report their status back (§3) |
 | `GET /health` · `GET /info` | ops |
 
@@ -292,6 +294,25 @@ The **sidecar serves both**, byte for byte, so the flow is testable on one lapto
 > search; making the collection contract-shaped means moving the board to its own path, which is
 > not worth breaking the board screen for mid-hackathon. Read `{id}` and `?name=` as the contract
 > surface and the bare list as the front end's.
+
+### Demo stepping (nothing here changes what a module does)
+
+`POST /api/v1/demo-mode {"enabled": true}` makes the orchestrator **hold every application before
+every dispatch** — the first included — instead of sending it. A held journey stays `IN_PROGRESS`,
+gains an `AWAITING_OPERATOR` row in its event log, and carries `pendingStep` (the step it is waiting
+to send) on both the board row and `/journey`. `POST /api/v1/applications/{id}/proceed` sends that
+step; `409` if the application is not held. Switching the toggle off releases everything held.
+
+It exists so the journey can be narrated live at the speed of a person talking.
+
+> **The button releases a dispatch. It never answers on a module's behalf.** Every service still
+> receives the same §2 envelope, still decides for itself, and still reports with the same §3 `PUT`.
+> Only *when* it is asked changes — so what an audience sees is the real journey slowed down, not a
+> puppet of one. **No module needs to know this feature exists**, and nothing in §2, §3 or §4 moves.
+
+A held journey is also **exempt from the callback timeout**: it is silent because nobody was asked,
+not because a module went quiet. Without that exemption every demo would die 30 seconds into its
+first pause, looking exactly like a broken module.
 
 Every dispatch, ack, status update, timeout and journey transition is appended to
 `application_event` and **never updated or deleted** — that table is the system of record.

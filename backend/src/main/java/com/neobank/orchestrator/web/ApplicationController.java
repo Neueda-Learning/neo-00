@@ -9,8 +9,10 @@ import com.neobank.orchestrator.saga.SagaEngine;
 import com.neobank.orchestrator.saga.SagaStore;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -155,5 +157,28 @@ public class ApplicationController {
     @GetMapping("/{id}/journey")
     public ResponseEntity<ApplicationDetail> journey(@PathVariable String id) {
         return ResponseEntity.of(store.detail(id));
+    }
+
+    /**
+     * {@code POST /api/v1/applications/{id}/proceed} — send the step a journey parked by demo
+     * stepping is waiting on. The Proceed button on the board.
+     *
+     * <p><b>This releases a dispatch; it does not answer for a module.</b> The service still
+     * decides and still reports its own status.</p>
+     *
+     * <p><b>409</b>, not 404, when the application is not parked — the id may well exist, it is
+     * the state that is wrong, and saying so is how an operator learns the toggle is off.</p>
+     */
+    @PostMapping("/{id}/proceed")
+    public ResponseEntity<Map<String, Object>> proceed(@PathVariable String id) {
+        return engine.proceed(id)
+                .map(step -> ResponseEntity.ok(Map.<String, Object>of(
+                        "applicationId", id, "dispatchedStep", step)))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                        "timestamp", Instant.now().toString(),
+                        "status", HttpStatus.CONFLICT.value(),
+                        "error", HttpStatus.CONFLICT.getReasonPhrase(),
+                        "message", id + " is not waiting for an operator — it is either already "
+                                + "running, finished, or unknown")));
     }
 }
