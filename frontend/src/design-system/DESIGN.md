@@ -48,10 +48,11 @@ import { AppShell, TopNav, PageHeader, DataTable, Badge } from './design-system'
 Never from a component file directly. The paths inside are free to move; the
 barrel is not.
 
-**Do not edit anything inside `design-system/`.** It is a vendored copy, verified
-byte-identical by `scripts/sync-design-system.sh --check` in CI. An edit will be
-reported as drift and lost on the next sync. If you need something the system does
-not have, see §8.
+**Prefer not to edit anything inside `design-system/`.** It is a vendored copy of
+`ui-kit/`. It was once held byte-identical by a CI gate; that gate was removed on
+2026-07-28, so an edit here now survives — and stays local to this repo, where the
+next person to compare copies will find it and wonder. If you need something the
+system does not have, see §8 first.
 
 ---
 
@@ -159,12 +160,17 @@ Scope it to `[data-ds-theme='name']` instead of `:root` to switch at runtime.
 - **`--ds-ground-image` / `--ds-ground-grain`, or `none`.** The shell paints them;
   a theme that sets neither gets a flat canvas at no cost.
 
-### The check that keeps this true
+### The check that used to keep this true
 
-`scripts/sync-design-system.sh --check` fails the build if any colour appears
-outside `theme/`. With a single theme that gate is the *only* thing standing
-between the system and a component quietly hardcoding a value — there is no second
-theme to reveal it. It runs in CI beside the drift check.
+`scripts/sync-design-system.sh --check` failed the build if any colour appeared
+outside `theme/`. It was removed with that script on 2026-07-28, so **nothing
+enforces this now** — and with a single theme there is no second theme to reveal a
+leak either. The rule stands on discipline; the grep that proves it:
+
+```bash
+grep -rnE '#[0-9a-fA-F]{3,8}\b|rgba?\(' src/design-system \
+  --include='*.css' --include='*.jsx' --include='*.js' | grep -v 'design-system/theme/'
+```
 
 ---
 

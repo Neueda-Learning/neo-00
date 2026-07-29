@@ -80,10 +80,30 @@ class OrchestratorApplicationTests {
                 .andReturn().getResponse().getContentAsString();
 
         String id = body.replaceAll("(?s).*\"id\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+        String applicantName =
+                body.replaceAll("(?s).*\"applicantName\"\\s*:\\s*\"([^\"]+)\".*", "$1");
 
+        // The bare resource is the api-contract §4 application object — the same one the ten
+        // services are handed in their dispatch envelope. Round-tripped through the database
+        // here, which the mocked @WebMvcTest slice cannot prove.
         mvc.perform(get("/api/v1/applications/" + id))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(id));
+                .andExpect(jsonPath("$.applicationId").value(id))
+                .andExpect(jsonPath("$.applicant.fullName").value(applicantName))
+                .andExpect(jsonPath("$.product.productCode").exists());
+
+        // The journey view keeps the board row and the append-only log.
+        mvc.perform(get("/api/v1/applications/" + id + "/journey"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.application.applicant.fullName").value(applicantName))
+                .andExpect(jsonPath("$.events[0].eventType").value("JOURNEY_STARTED"));
+
+        // Name search: substring, case-insensitive, and it answers in §4 objects.
+        String fragment = applicantName.substring(applicantName.length() - 4).toUpperCase();
+        mvc.perform(get("/api/v1/applications").param("name", fragment))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.applicationId=='" + id + "')]", hasSize(1)));
 
         mvc.perform(get("/api/v1/applications"))
                 .andExpect(status().isOk())

@@ -32,7 +32,8 @@ fields it needs.
   before moving on — the `202` only acknowledges receipt.
 - Between a status update and the next dispatch it waits **1 second**.
 - **Only `ACCEPTED` advances the journey.** `REJECTED` ends it as `REJECTED`, `REFERRED`
-  ends it as `REFERRED`; the remaining steps are never dispatched.
+  ends it as `REFERRED`; the remaining steps are never dispatched. Your module's own word for
+  those outcomes works too — see §3.
 - No status update within **30 seconds** → the step is recorded as `TIMEOUT` and the application
   ends as `FAILED`. Late updates against a finished application are logged and ignored.
 - Many applications are in flight at once; each *individual* journey is strictly sequential.
@@ -98,13 +99,81 @@ would only create a way for the two to disagree. An `applicationId` left in the 
 | Field | Notes |
 |---|---|
 | `serviceId` | `neo01` … `neo10` — your repo name **without the hyphen** (`neo-04` → `neo04`) |
-| `status` | `ACCEPTED` · `REJECTED` · `REFERRED` — the same three for every module |
+| `status` | **send `ACCEPTED` · `REJECTED` · `REFERRED`** — the same three for every module. Your brief's own word is also understood; see *Which vocabulary to use* |
 | `comment` | free text, shown in the event log — your module's reason for the outcome |
 
-Three statuses, for all ten modules, whatever the topic. A module that wants to say
-"passed" / "clear" / "signed" / "issued" says `ACCEPTED` on the wire and says the domain word
-in `comment` and on its own screens. Ten modules inventing ten vocabularies is ten things the
-orchestrator would have to know about.
+### Which vocabulary to use
+
+**Send the shipped three.** They are the same for all ten modules whatever the topic, they are
+what the skeleton already sends, and they are what the board and the service tallies are built
+out of.
+
+But the module briefs were written before this contract was simplified, so a team can reasonably
+arrive at a different word — its brief's `completed` / `application-manual`, or its own domain
+word like `PASSED` or `CLEAR`. **The orchestrator understands all three vocabularies**, because
+how a module's outcome maps onto the journey is the orchestrator's business, not something ten
+teams should each decide. It is one table in one repo —
+`backend/src/main/java/com/neobank/orchestrator/saga/StatusVocabulary.java` — rather than ten
+opinions in ten repos.
+
+If your module already speaks its brief's word, it works. You do not need to change it.
+
+### What the orchestrator accepts
+
+Matching ignores case, and treats `-`, `_` and a space as the same separator: `application-manual`,
+`APPLICATION_MANUAL` and `Application Manual` are one word.
+
+**From every module:**
+
+| you send | the journey |
+|---|---|
+| `ACCEPTED` · `COMPLETED` · `APPROVED` | advances to the next step |
+| `REJECTED` | ends as `REJECTED` |
+| `REFERRED` · `APPLICATION-MANUAL` · `LOCAL-MANUAL` | ends as `REFERRED` |
+| `IN-PROGRESS` · `PENDING` | keeps waiting — see *Reporting progress* |
+
+**From your module specifically**, taken from your brief's *Status mapping* row:
+
+| serviceId | advances | ends `REJECTED` | ends `REFERRED` |
+|---|---|---|---|
+| `neo01` verification | `PASSED` | `FAILED` | `REVIEW` |
+| `neo02` policy | `APPROVED` | `REJECTED` | `REFERRED` |
+| `neo03` kyc | `VERIFIED` | `FAILED` | `REVIEW` |
+| `neo04` screening | `CLEAR` | `HIT` | `REVIEW` |
+| `neo05` credit | `APPROVED` | `DECLINED` | `REFERRED` |
+| `neo06` agreement | `SIGNED` | `DECLINED` | `EXPIRED` |
+| `neo07` account | `OPENED` | — | `FAILED` |
+| `neo08` card | `ISSUED` | — | `FAILED` |
+| `neo09` support | `RESOLVED` · `CLOSED` | — | — |
+| `neo10` analytics | *(the global set above)* | | |
+
+### Why `FAILED` is keyed per module
+
+Because it does not mean the same thing twice. For `neo01` and `neo03` it is a business answer —
+the applicant failed a rule — so the journey ends `REJECTED`. For `neo07` and `neo08` it is not a
+rejection at all: the core banking system or the card bureau was unreachable, nobody was refused,
+and a person retries — so the journey ends `REFERRED`.
+
+One global word→status table would silently reject applicants whose card bureau had a bad minute.
+That is why the table above is per module, and why it should not be flattened into one list.
+
+### Reporting progress
+
+`IN-PROGRESS` and `PENDING` are recorded but **do not** advance or end the journey — useful when
+you have genuinely parked, like `neo06` waiting for a signature before it can say `SIGNED`.
+
+Each progress report **restarts the 30-second clock**. So send one when something real has
+happened and then send your decision; do not build a polling loop, because a module that reports
+progress forever keeps its application alive forever.
+
+### A word the orchestrator does not know
+
+It is recorded on the event log, but the journey does not advance and the sweeper fails it at 30
+seconds. The orchestrator logs a `WARN` naming your module and listing every word it would have
+accepted — grep your orchestrator logs for `Unknown status` if a journey stalls at your step.
+
+The event log stores the canonical word, so if you want your own word visible on the board, put
+it in `comment`.
 
 `status` comes from your own `ApplicationService.processApplication()`. The skeleton answers
 `ACCEPTED` unconditionally, so **every journey completes out of the box** — which means a
@@ -190,7 +259,9 @@ refuse the request with a `400`.
 |---|---|
 | `POST /api/v1/applications` | create one application now (body optional — a fixture is generated) |
 | `GET /api/v1/applications` | board rows: id, applicant, product, ten step statuses, overall |
-| `GET /api/v1/applications/{id}` | one application + its full append-only event log |
+| `GET /api/v1/applications?name=` | **§4 application objects** whose applicant name contains `name` (substring, case-insensitive; blank matches nothing) |
+| `GET /api/v1/applications/{id}` | **the §4 application object** — the same one the dispatch envelope carries. `404` if unknown |
+| `GET /api/v1/applications/{id}/journey` | the board row + the application + its full append-only event log |
 | `GET /api/v1/events?serviceId=&limit=` | the event log filtered to one service |
 | `GET /api/v1/services` | per service: in-progress count + count per status |
 | `GET /api/v1/generator` · `POST /api/v1/generator` | the start/stop toggle `{enabled, intervalMs}` |
@@ -198,6 +269,24 @@ refuse the request with a `400`.
 | `GET /health` · `GET /info` | ops |
 
 Overall application status ∈ `IN_PROGRESS · COMPLETED · REJECTED · REFERRED · FAILED`.
+
+### Reading an application back (what a service may call)
+
+Most of the table above is the front end's business, but two rows are not:
+**`GET /api/v1/applications/{id}`** and **`?name=`** are there for the ten services. A module that
+needs applicant data it correctly did not store locally reads it here, live, and stores nothing.
+
+Both answer in the **§4 application object** — identical to the `application` field of the dispatch
+envelope. One object, two ways to get it: pushed to you, or pulled by you. That is the whole point;
+if the pulled copy had a different shape, it would be a second contract to keep in step.
+
+The **sidecar serves both**, byte for byte, so the flow is testable on one laptop.
+
+> ⚠️ **One URL, two shapes.** `GET /api/v1/applications` returns *board rows* bare and *application
+> objects* with `?name=`. That is a wart. The bare collection is a UI view that predates the
+> search; making the collection contract-shaped means moving the board to its own path, which is
+> not worth breaking the board screen for mid-hackathon. Read `{id}` and `?name=` as the contract
+> surface and the bare list as the front end's.
 
 Every dispatch, ack, status update, timeout and journey transition is appended to
 `application_event` and **never updated or deleted** — that table is the system of record.

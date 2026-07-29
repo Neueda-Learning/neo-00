@@ -86,7 +86,43 @@ class SagaFlowTest {
                 .steps()).allSatisfy(s -> assertThat(s.status()).isEqualTo("ACCEPTED"));
     }
 
+    @Test
+    void aModulesOwnDomainWordAdvancesTheJourney() {
+        // The APP-0011 incident as a test: neo01 reported PASSED, its brief's word for a pass,
+        // and the orchestrator ignored it — so the journey stalled at step 1 and died on the
+        // 30-second sweep with nothing said about why.
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "PASSED", "all three rules passed"));
+        awaitDispatchOf(id, 2);
+
+        assertThat(detail(id).currentStep()).isEqualTo(2);
+        // Stored canonically, so the board dot and the service tallies still recognise it.
+        assertThat(stepsOf(id).get(0).status()).isEqualTo(StatusVocabulary.ACCEPTED);
+        assertThat(summaryFor("neo01").accepted()).isPositive();
+    }
+
     // ---- stopping ----
+
+    @Test
+    void failedFromTheAccountModuleParksTheJourneyRatherThanRejectingIt() {
+        // FAILED means something different depending on who says it. For neo07 the core banking
+        // system was unreachable — nobody was refused — so the journey must park for a person
+        // instead of ending REJECTED. This is the case that justifies keying the table per module.
+        String id = startAndAwaitDispatch();
+        for (int step = 1; step <= 6; step++) {
+            engine.handleApplicationStatusUpdate(id,
+                    new ApplicationStatusUpdate(serviceIdOf(step), "ACCEPTED", "ok"));
+            awaitDispatchOf(id, step + 1);
+        }
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo07", "FAILED", "core banking unreachable"));
+
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.REFERRED);
+        assertThat(stepsOf(id).get(6).status()).isEqualTo(StatusVocabulary.REFERRED);
+    }
 
     @Test
     void rejectedCallbackEndsTheJourneyWhereItHappened() {
@@ -166,6 +202,41 @@ class SagaFlowTest {
 
         assertThat(detail(id).overallStatus()).isEqualTo(Application.IN_PROGRESS);
         assertThat(detail(id).currentStep()).isEqualTo(1);
+    }
+
+    @Test
+    void aProgressReportKeepsTheJourneyWaitingWithoutTouchingItsDotOrItsCount() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "PENDING", "awaiting the signature"));
+        sleep(200);
+
+        ApplicationDetail detail = detail(id);
+        assertThat(detail.events()).anyMatch(e -> "PROGRESS_REPORTED".equals(e.eventType()));
+        assertThat(detail.overallStatus()).isEqualTo(Application.IN_PROGRESS);
+        assertThat(detail.currentStep()).isEqualTo(1);
+
+        // The two that pin the choice of a separate event type. Recorded as a CALLBACK, this
+        // report would overwrite the step's in-flight dot and clear neo01's running count — a
+        // module honestly saying "still working" would erase itself from both screens.
+        assertThat(stepsOf(id).get(0).status()).isEqualTo(StepView.IN_FLIGHT);
+        assertThat(summaryFor("neo01").inProgress()).isPositive();
+    }
+
+    @Test
+    void aStatusTooLongForTheColumnIsRecordedRatherThanFailingThePut() {
+        // An unrecognised word is stored as the module sent it, so this column now carries
+        // arbitrary module input. Over-length input must not turn the report into a 500 and
+        // lose the one clue an operator has.
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "X".repeat(40), "a very long opinion"));
+        sleep(200);
+
+        assertThat(detail(id).events()).anyMatch(e -> "X".repeat(24).equals(e.status()));
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.IN_PROGRESS);
     }
 
     @Test

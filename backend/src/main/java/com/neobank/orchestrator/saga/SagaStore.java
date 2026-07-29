@@ -54,6 +54,17 @@ public class SagaStore {
         record Finished(String overallStatus) implements CallbackOutcome {
         }
 
+        /**
+         * The service is still working. Recorded as a
+         * {@link ApplicationEvent#PROGRESS_REPORTED} event, which restarts the timeout clock;
+         * the journey neither advances nor ends.
+         *
+         * <p>Deliberately not {@link Ignored}: that means late, duplicate, or from the wrong
+         * service, and a module doing exactly what its brief tells it to is none of the three.</p>
+         */
+        record Waiting(String reportedStatus) implements CallbackOutcome {
+        }
+
         /** Recorded, but it changes nothing (late, duplicate, or from the wrong service). */
         record Ignored(String why) implements CallbackOutcome {
         }
@@ -135,6 +146,12 @@ public class SagaStore {
      *
      * <p>{@code applicationId} is a parameter because it comes from the {@code PUT} URL, not from
      * the body.</p>
+     *
+     * <p>The word itself is resolved through {@link StatusVocabulary} <em>before</em> the row is
+     * written, so what lands in {@code application_event.status} is one of the four canonical
+     * values. Both derived views depend on that: {@code toRow} paints the board dot straight from
+     * this column, and {@code serviceSummaries} buckets on it. A module's own word stored here
+     * would show up as a grey dot and vanish out of the service tallies.</p>
      */
     @Transactional
     public CallbackOutcome recordApplicationStatusUpdate(String applicationId, ApplicationStatusUpdate cb) {
@@ -144,10 +161,24 @@ public class SagaStore {
             return new CallbackOutcome.Ignored("unknown application " + applicationId);
         }
 
-        String status = normalize(cb.status());
+        String reported = StatusVocabulary.normalize(cb.status());
+        String status = StatusVocabulary.canonical(cb.serviceId(), reported).orElse(null);
+        boolean progress = StatusVocabulary.IN_PROGRESS.equals(status);
         int step = stepOf(cb.serviceId(), app.getCurrentStep());
+        // A progress report gets its own event type so it is not mistaken for the end of a wait.
+        // An unrecognised word is stored exactly as the module said it — there is no canonical
+        // value to store, and that word is the only clue the operator gets.
         events.save(new ApplicationEvent(app.getId(), step, cb.serviceId(),
-                ApplicationEvent.CALLBACK, status, cb.comment()));
+                progress ? ApplicationEvent.PROGRESS_REPORTED : ApplicationEvent.CALLBACK,
+                status == null ? reported : status, cb.comment()));
+
+        if (status != null && !status.equals(reported)) {
+            // The fault this vocabulary fixes was invisible: nothing said a module spoke a
+            // different dialect. INFO rather than DEBUG — it fires only for modules worth knowing
+            // about, and stops on its own as teams converge on the shipped three.
+            log.info("{} said '{}' on {} — recorded as {}", cb.serviceId(), cb.status(),
+                    app.getId(), status);
+        }
 
         if (app.isTerminal()) {
             log.info("Late status update for {} ({} already {}) — recorded, ignored",
@@ -163,8 +194,22 @@ public class SagaStore {
             return new CallbackOutcome.Ignored("not the current step");
         }
 
+        if (status == null) {
+            // Everything an operator needs to act, in one line: which module, the word exactly as
+            // it was sent, what it costs, what would have worked, and both ways to fix it. The
+            // message this replaced said only "unknown status — recorded, ignored", which left a
+            // 30-second silence and no way to attribute it.
+            log.warn("Unknown status '{}' from {} on {} — recorded, but the journey does NOT advance "
+                            + "and the sweeper will fail it. {} may send: {} (case-insensitive; "
+                            + "'-' and '_' are the same). Fix the module, or teach the word to "
+                            + "StatusVocabulary — see api-contract.md §3.",
+                    cb.status(), cb.serviceId(), app.getId(), cb.serviceId(),
+                    StatusVocabulary.acceptedWords(cb.serviceId()));
+            return new CallbackOutcome.Ignored("unknown status " + cb.status());
+        }
+
         return switch (status) {
-            case "ACCEPTED" -> {
+            case StatusVocabulary.ACCEPTED -> {
                 if (app.getCurrentStep() >= registry.size()) {
                     yield finish(app, Application.COMPLETED, "all " + registry.size() + " services accepted");
                 }
@@ -175,12 +220,19 @@ public class SagaStore {
                 applications.save(app);
                 yield new CallbackOutcome.Advance(next);
             }
-            case "REJECTED" -> finish(app, Application.REJECTED, cb.serviceId() + " rejected");
-            case "REFERRED" -> finish(app, Application.REFERRED, cb.serviceId() + " referred");
+            case StatusVocabulary.REJECTED -> finish(app, Application.REJECTED, cb.serviceId() + " rejected");
+            case StatusVocabulary.REFERRED -> finish(app, Application.REFERRED, cb.serviceId() + " referred");
+            case StatusVocabulary.IN_PROGRESS -> {
+                log.info("{} is still working on {} ('{}') — recorded, the journey waits",
+                        cb.serviceId(), app.getId(), cb.status());
+                yield new CallbackOutcome.Waiting(reported);
+            }
             default -> {
-                log.warn("Status update for {} carried unknown status '{}' — recorded, ignored",
-                        app.getId(), cb.status());
-                yield new CallbackOutcome.Ignored("unknown status " + cb.status());
+                // Unreachable while the vocabulary only produces the four words above, which
+                // everyMappingLandsOnOneOfTheFourWordsTheSagaKnowsHowToActOn pins. Never throw at
+                // a module for a fault of ours.
+                log.error("StatusVocabulary produced '{}', which the saga has no rule for", status);
+                yield new CallbackOutcome.Ignored("unhandled canonical status " + status);
             }
         };
     }
@@ -244,10 +296,46 @@ public class SagaStore {
                 .toList();
     }
 
+    /**
+     * The application itself, as the api-contract §4 object — byte for byte the same shape the
+     * dispatch envelope carries in its {@code application} field.
+     *
+     * <p>This is what a service gets from {@code GET /api/v1/applications/{id}}, and it is
+     * deliberately <em>not</em> {@link SagaDtos.ApplicationDetail}. A service asking for an
+     * application wants the application; the board row and the event log are this orchestrator's
+     * own view of the journey and live at {@code /{id}/journey}. One object, two ways to get it:
+     * pushed in the envelope, or pulled by id.</p>
+     */
+    @Transactional(readOnly = true)
+    public Optional<Map<String, Object>> application(String id) {
+        return applications.findById(id).map(a -> readPayload(a.getPayloadJson()));
+    }
+
+    /**
+     * Applications whose applicant name <em>contains</em> {@code name}, newest first, each as the
+     * same §4 object {@link #application(String)} returns.
+     *
+     * <p>Substring and case-insensitive on purpose: this backs an operator typing a name into a
+     * search box, not an exact-match lookup. A blank query matches nothing rather than everything —
+     * returning the whole book because someone tabbed through a field is not a search result.</p>
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> applicationsByName(String name, int limit) {
+        if (name == null || name.isBlank()) {
+            return List.of();
+        }
+        return applications.findByApplicantNameContainingIgnoreCaseOrderByCreatedAtDesc(
+                        name.strip(), org.springframework.data.domain.Limit.of(limit))
+                .stream()
+                .map(a -> readPayload(a.getPayloadJson()))
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public Optional<SagaDtos.ApplicationDetail> detail(String id) {
         return applications.findById(id)
-                .map(a -> SagaDtos.ApplicationDetail.of(a, events.findByApplicationIdOrderByIdAsc(id)));
+                .map(a -> SagaDtos.ApplicationDetail.of(a, readPayload(a.getPayloadJson()),
+                        events.findByApplicationIdOrderByIdAsc(id)));
     }
 
     @Transactional(readOnly = true)
@@ -272,9 +360,11 @@ public class SagaStore {
         List<SagaDtos.ServiceSummary> out = new ArrayList<>();
         for (ServiceDef s : registry.ordered()) {
             Map<String, Long> t = tallies.getOrDefault(s.serviceId(), Map.of());
-            long accepted = t.getOrDefault("ACCEPTED", 0L);
-            long rejected = t.getOrDefault("REJECTED", 0L);
-            long referred = t.getOrDefault("REFERRED", 0L);
+            // The same three constants the vocabulary resolves to, so a bucket cannot drift away
+            // from what gets stored.
+            long accepted = t.getOrDefault(StatusVocabulary.ACCEPTED, 0L);
+            long rejected = t.getOrDefault(StatusVocabulary.REJECTED, 0L);
+            long referred = t.getOrDefault(StatusVocabulary.REFERRED, 0L);
             long timeouts = timedOut.getOrDefault(s.serviceId(), 0L);
             long running = inFlight.getOrDefault(s.serviceId(), 0L);
             out.add(new SagaDtos.ServiceSummary(s.step(), s.serviceId(), s.name(), s.baseUrl(),
@@ -313,7 +403,9 @@ public class SagaStore {
                         statusByStep.put(e.getStepIndex(), e.getStatus());
                 case ApplicationEvent.TIMEOUT, ApplicationEvent.DISPATCH_FAILED ->
                         statusByStep.put(e.getStepIndex(), "TIMEOUT");
-                default -> { /* journey markers carry no step status */ }
+                // A PROGRESS_REPORTED row lands here on purpose: the step is still waiting, so
+                // its dot must stay in-flight rather than be overwritten.
+                default -> { /* journey markers and progress reports carry no step status */ }
             }
         }
         List<StepView> steps = registry.ordered().stream()
@@ -383,10 +475,6 @@ public class SagaStore {
                 .map(ServiceDef::step)
                 .findFirst()
                 .orElse(fallback);
-    }
-
-    private static String normalize(String status) {
-        return status == null ? "" : status.trim().toUpperCase();
     }
 
     private Map<String, Object> readPayload(String payloadJson) {

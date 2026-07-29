@@ -28,12 +28,22 @@ absent modules simply time out.
    REFERRED`. `ApplicationControllerTest` pins it. If a change makes it fail, the change is
    wrong — and here that is not a figure of speech: a breaking edit lands on ten teams at once,
    so it has to be made in the orchestrator, the sidecar and the template together.
+   Those three are what a module should **send**; the orchestrator also **accepts** each
+   module's own brief word (`PASSED`, `CLEAR`, `SIGNED`, `ISSUED`…) and the briefs' canonical
+   set, because the briefs predate the simplified contract and a team can reasonably arrive at
+   any of them. `StatusVocabulary` owns that table — it widens what is understood without
+   changing the wire.
 2. **`serviceId` ≠ repo name.** `neo-04` is the repository; `neo04` is what it sends.
    Intentional — don't "fix" it.
 3. **`application_event` is append-only.** Insert; never update, never delete. Both screens
    and the service summary are *derived* from it, so a wrong fact is corrected by another
    row, not an edit.
-4. **Only `ACCEPTED` advances a journey.** Everything else is terminal.
+4. **Only a status that resolves to `ACCEPTED` advances a journey** — via `StatusVocabulary`,
+   so `PASSED`, `CLEAR`, `SIGNED`, `OPENED`, `ISSUED`, `VERIFIED`, `APPROVED`, `RESOLVED` and
+   `COMPLETED` all do. `REJECTED` and `REFERRED` are terminal. `IN_PROGRESS`/`PENDING` are
+   neither: they are recorded as a `PROGRESS_REPORTED` event, the journey keeps waiting, and the
+   30-second clock restarts. A word in no table is recorded, warned about, and stalls the journey
+   until the sweeper fails it.
 5. **A terminal application never restarts.** `SagaStore.recordApplicationStatusUpdate`
    short-circuits on `isTerminal()`. Removing that lets an answer arriving after the timeout
    sweeper resurrect a dead journey — there is a test for exactly this.
@@ -51,9 +61,10 @@ absent modules simply time out.
 8. **Schema isolation.** Each service owns one MySQL schema and reads no other.
 9. **The generator starts off.** The orchestrator calls services that call it back; firing
    at boot means firing at containers that aren't listening.
-10. **`ui-kit/` is shipped to module repos and never edited in a copy.** It is **vendored** —
-    copied by `scripts/sync-design-system.sh`, with `--check` gating CI — because app code lives
-    inside it. Fix it here; an edited copy is reported and overwritten on the next sync.
+10. **`ui-kit/` is this repo's design system, and each module owns its own copy.** It was once
+    vendored into all eleven frontends and held byte-identical by a CI gate; that gate and its
+    script were removed on 2026-07-28 along with every other top-level check on a module repo.
+    Fix `ui-kit/` for this frontend. A module's copy is that team's to change.
 11. **The mock orchestrator is NOT in this repo, and must not be moved into it.** It lives in
     `github.com/Neueda-Learning/neobank-sidecar` and module repos build it as a git build context. A git
     context clones submodules recursively, so the `neo-01` submodule's SSH URL makes any
@@ -80,6 +91,7 @@ absent modules simply time out.
 |---|---|
 | `backend/.../saga/SagaEngine.java` | the sequencer: dispatch, advance, stop |
 | `backend/.../saga/SagaStore.java` | every DB write + the views both screens read |
+| `backend/.../saga/StatusVocabulary.java` | the ten modules' status words → the four the saga acts on |
 | `backend/.../saga/TimeoutSweeper.java` | gives up on a silent service |
 | `backend/.../generator/` | the toggle, and the seed-42 application factory |
 | `backend/.../web/` | the REST surface |
@@ -92,10 +104,14 @@ absent modules simply time out.
 ## Tests
 
 ```bash
-cd backend && ./mvnw test                    # 25, H2, no Docker
+cd backend && ./mvnw test                    # 50, H2, no Docker
 cd backend && ./mvnw verify -DskipITs=false  # + 3 real-MySQL (Docker required)
 ```
 
 `SagaFlowTest` is the one that matters: it drives the state machine with the HTTP call
 stubbed and asserts what must *not* happen — no advance past a rejection, no dispatch after
 a timeout, no resurrection from a late callback.
+
+`StatusVocabularyTest` carries the vocabulary table, because a journey cannot: it only reaches
+the steps it gets to, with whatever outcome the seeded applicant happens to produce, so driving
+the saga proves one row at a time by luck.

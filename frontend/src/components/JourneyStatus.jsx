@@ -49,7 +49,7 @@ export default function JourneyStatus({ applicationId, product, onRestart, onHom
     let live = true;
     async function load() {
       try {
-        const d = await api.application(applicationId);
+        const d = await api.journey(applicationId);
         if (live) {
           setDetail(d);
           setError(null);

@@ -29,28 +29,27 @@ The obvious answers do not work here:
 | `file:../design-system` | the Docker build context is `frontend/` — a sibling path is outside it |
 | git submodule | teams need "always latest" without a pointer bump; `PLAN-repo-orchestration.md` already ruled this out |
 
-So it is a vendored source folder, copied verbatim, with a drift check — the same
-pattern `attempt-01/scripts/make-modules.sh` already uses for the ten services.
+So it is a vendored source folder, copied verbatim into each frontend at build-out.
 
-```bash
-../scripts/sync-design-system.sh          # copy canonical → every target
-../scripts/sync-design-system.sh --check  # fail if any copy has drifted (CI)
-```
+**The sync script and its drift check were removed on 2026-07-28.** They held all eleven
+copies byte-identical and failed CI when one differed. That expectation is retired: the
+ten module repos are handed over, the teams own their frontends, and neo-00 no longer
+verifies anything inside them. Two teams had already improved their copy — a modal
+focus-steal fix and keyboard activation on table rows — and the gate could only call that
+a build error.
 
-**Fix the design system here, never in a copy.** A copy that has been edited is
-reported as drift and is overwritten on the next sync.
+## Where the copies are
 
-## Targets
+| repo | path | owner |
+| --- | --- | --- |
+| neo-00 (orchestrator) | `frontend/src/design-system/` | this repo |
+| neo-01 … neo-10 (modules) | `neo-NN/frontend/src/design-system/` | that team |
 
-| repo | path |
-| --- | --- |
-| neo-00 (orchestrator) | `frontend/src/design-system/` |
-| neo-01 (module) | `neo-01/frontend/src/design-system/` |
+Each copy is now independent. There is no mechanism that propagates a change made here
+into a module, and none that reports when one differs — if you want a fix in all eleven,
+it has to be carried by hand or by a PR to each team.
 
-Modules 02–10 add one line each to `scripts/sync-design-system.sh` as their repos
-appear.
-
-## One theme, and the gate that protects it
+## One theme, and the proof that is no longer automated
 
 The product ships a single theme, `glass` — the Havn Glass Console handoff, kept in
 each frontend at `frontend/handoff/glass/` and translated into
@@ -61,9 +60,17 @@ A single theme costs us the regression detector a second one provided for free: 
 two themes, a component that hardcodes a colour shows up the moment you switch. With
 one, it hides until somebody writes theme number two.
 
-So the proof is a gate instead. `sync-design-system.sh --check` fails if any colour
-appears outside `theme/`, and it runs in CI beside the drift check. Both have been
-verified to fail, not just to pass.
+That proof used to be a gate: `sync-design-system.sh --check` failed the build if any
+colour appeared outside `theme/`. **It went when the script did (2026-07-28)** — it lived
+inside the file that was removed, even though it only ever read `ui-kit/` and never a
+module repo. Nothing enforces colour containment now. The one-line check, if you want it
+back by hand or as its own script:
 
-If a component ever needs editing to make a theme work, the component has leaked a
-decision that belongs in the theme.
+```bash
+grep -rnE '#[0-9a-fA-F]{3,8}\b|rgba?\(' src/design-system \
+  --include='*.css' --include='*.jsx' --include='*.js' | grep -v 'design-system/theme/'
+```
+
+Empty output means the system is still reskinnable. Any hit is a component that has leaked
+a decision belonging to the theme — which is also the rule in general: if a component ever
+needs editing to make a theme work, the leak is in the component.
