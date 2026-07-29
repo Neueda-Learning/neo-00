@@ -312,10 +312,33 @@ class SagaFlowTest {
         String id = generator.createAndStart().getId();
         assertThat(detail(id).pendingStep()).isEqualTo(1);
 
-        store.sweepTimeouts(Duration.ZERO);
+        engine.sweepTimeouts(Duration.ZERO);
 
         assertThat(detail(id).overallStatus()).isEqualTo(Application.IN_PROGRESS);
         assertThat(eventTypes(detail(id))).doesNotContain("TIMEOUT");
+        // Still held: with stepping on, the sweep must not release it either.
+        assertThat(detail(id).pendingStep()).isEqualTo(1);
+    }
+
+    /**
+     * The restart hole. {@code demoStepping} is in memory and comes back off; {@code pending_step}
+     * is in the database and comes back set — so a journey parked when the process died would
+     * return held with nothing holding it, and the timeout sweep skips parked rows, so nothing
+     * would ever pick it up again.
+     */
+    @Test
+    void aJourneyLeftParkedWhileSteppingIsOffIsReleasedByTheNextSweep() {
+        String id = startAndAwaitDispatch();     // stepping is off
+        store.park(id, 2);                       // exactly what a restart leaves behind
+        assertThat(detail(id).pendingStep()).isEqualTo(2);
+
+        // A generous timeout, so nothing here is failing for being quiet — the release is the
+        // only thing under test.
+        engine.sweepTimeouts(Duration.ofMinutes(5));
+
+        awaitDispatchOf(id, 2);
+        assertThat(detail(id).pendingStep()).isNull();
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.IN_PROGRESS);
     }
 
     /** Only ACCEPTED parks, so a refusal still ends where it happened and offers no button. */

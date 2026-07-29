@@ -200,7 +200,10 @@ abandoned half-way.
 > demonstrating it: the teams in the room wrote the code that is still doing the deciding.
 
 A held journey is deliberately exempt from the 30-second callback timeout — it is silent
-because nobody was asked, not because a module went quiet.
+because nobody was asked, not because a module went quiet. **Stepping off means nothing is
+held:** the toggle lives in memory and comes back off after a restart, while the hold is
+stored, so anything left over is released by the next sweep rather than sitting there
+un-sweepable.
 
 `DEMO_STEPPING=true` sets it at boot; `GET /info` reports it, which is the first thing to
 check when a stack looks stuck.

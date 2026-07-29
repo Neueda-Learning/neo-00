@@ -159,8 +159,26 @@ public class SagaEngine {
         return demoStepping.get();
     }
 
-    /** Fail anything that has gone quiet. Called by {@link TimeoutSweeper}. */
+    /**
+     * Fail anything that has gone quiet, and first release anything left parked by mistake.
+     * Called by {@link TimeoutSweeper}.
+     *
+     * <p><b>The reconciliation matters more than it looks.</b> The toggle lives in memory and
+     * comes back <em>off</em> after a restart; {@code pending_step} lives in the database and
+     * comes back exactly as it was. So a journey parked when the process died would return
+     * held with nothing holding it — and because {@link SagaStore#sweepTimeouts} deliberately
+     * skips parked rows, the one mechanism that stops a journey wedging forever would never
+     * touch it. It would sit {@code IN_PROGRESS} for the life of the database.</p>
+     *
+     * <p>The rule is simply that the two must agree: <b>stepping off means nothing is
+     * parked.</b> Running it here rather than only at boot also closes a race — a status update
+     * can land between {@link #setDemoStepping} reading the parked list and the flag going
+     * off, which would park an application a moment after the release-all had passed it.</p>
+     */
     public int sweepTimeouts(Duration timeout) {
+        if (!demoStepping.get()) {
+            store.parkedApplicationIds().forEach(this::proceed);
+        }
         return store.sweepTimeouts(timeout);
     }
 
