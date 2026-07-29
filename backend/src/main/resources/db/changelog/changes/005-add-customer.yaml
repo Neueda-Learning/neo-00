@@ -1,0 +1,60 @@
+# Who applied. A four-character code — two letters, two digits, "AB12" — typed on a login screen
+# so somebody can come back and see the card they were approved for.
+#
+# IDENTIFICATION, NOT AUTHENTICATION. There is no password and nothing is authorised by it: the
+# code says which applications to LIST, and every other endpoint still keys on the application id
+# alone. See Customer.java.
+#
+# customer_id is NULLABLE and stays null for generator fixtures and the backoffice "+ one", which
+# is what keeps them filling the operator board while appearing on nobody's home.
+#
+# No foreign key: this schema has none anywhere (application_event.application_id is an
+# unconstrained VARCHAR too), and an application whose customer row was removed should still be
+# readable by the bank.
+#
+# Row budget: VARCHAR(4) in utf8mb4 is 16 bytes, taking `application` from 41152 to 41168 of the
+# 65535 MySQL allows a row. VARCHAR not TEXT, and no BOOLEAN — both are traps 001 and 002 already
+# document under ddl-auto=validate.
+databaseChangeLog:
+  - changeSet:
+      id: 005-add-customer
+      author: neo-00
+      changes:
+        - createTable:
+            tableName: customer
+            columns:
+              - column:
+                  # The code IS the key. There is no surrogate id, because there is nothing else
+                  # about a customer to know.
+                  name: id
+                  type: VARCHAR(4)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: application
+            columns:
+              - column:
+                  name: customer_id
+                  type: VARCHAR(4)
+        - createIndex:
+            tableName: application
+            indexName: idx_application_customer
+            columns:
+              - column:
+                  name: customer_id
+      rollback:
+        - dropIndex:
+            tableName: application
+            indexName: idx_application_customer
+        - dropColumn:
+            tableName: application
+            columnName: customer_id
+        - dropTable:
+            tableName: customer

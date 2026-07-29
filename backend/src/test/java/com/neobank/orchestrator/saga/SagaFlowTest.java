@@ -38,9 +38,25 @@ import org.springframework.web.client.RestClient;
 @ActiveProfiles("test")
 // Its own in-memory database. The default H2 URL is shared by every test context in the
 // module, and this class sweeps *all* in-progress applications — including other classes'.
-@TestPropertySource(properties =
-        "spring.datasource.url=jdbc:h2:mem:sagaflow;MODE=MySQL;DB_CLOSE_DELAY=-1")
+@TestPropertySource(properties = {
+        "spring.datasource.url=jdbc:h2:mem:sagaflow;MODE=MySQL;DB_CLOSE_DELAY=-1",
+        // Two seconds instead of ten minutes, so the signature hold's own clock is testable
+        // in the same context that proves the ordinary one does not apply to it.
+        //
+        // It applies to the whole class, but only bites a journey that has actually been MARKED
+        // as awaiting a signature — which takes an IN_PROGRESS report from neo06 specifically.
+        // No other test here sends one, so they all still run on the ordinary timeout. If you add
+        // a neo06 progress report to an unrelated test and it starts failing after two seconds,
+        // this line is why.
+        "orchestrator.signature.timeout=2s"})
 class SagaFlowTest {
+
+    /** Matches {@code orchestrator.signature.timeout} above. */
+    private static final long SIGNATURE_TIMEOUT_MS = 2000;
+
+    /** The agreement step — the one service whose wait is a customer's. */
+    private static final int SIGNATURE_STEP = 6;
+    private static final String SIGNATURE_SERVICE = "neo06";
 
     @MockBean(answer = Answers.RETURNS_DEEP_STUBS)
     RestClient restClient;
@@ -267,7 +283,7 @@ class SagaFlowTest {
     void demoSteppingParksTheJourneyBeforeTheVeryFirstDispatch() {
         engine.setDemoStepping(true);
 
-        String id = generator.createAndStart().getId();
+        String id = generator.createAndStart((String) null).getId();
 
         ApplicationDetail detail = detail(id);
         assertThat(detail.pendingStep()).isEqualTo(1);
@@ -281,7 +297,7 @@ class SagaFlowTest {
     @Test
     void proceedSendsTheParkedStepAndTheJourneyThenParksAgain() {
         engine.setDemoStepping(true);
-        String id = generator.createAndStart().getId();
+        String id = generator.createAndStart((String) null).getId();
 
         assertThat(engine.proceed(id)).contains(1);
         awaitDispatchOf(id, 1);
@@ -312,7 +328,7 @@ class SagaFlowTest {
     @Test
     void aParkedJourneyIsNotSweptByTheTimeout() {
         engine.setDemoStepping(true);
-        String id = generator.createAndStart().getId();
+        String id = generator.createAndStart((String) null).getId();
         assertThat(detail(id).pendingStep()).isEqualTo(1);
 
         engine.sweepTimeouts(Duration.ZERO);
@@ -344,11 +360,111 @@ class SagaFlowTest {
         assertThat(detail(id).overallStatus()).isEqualTo(Application.IN_PROGRESS);
     }
 
+    // ---- the signature hold: the one wait that belongs to a customer ----
+
+    @Test
+    void theSignatureServiceReportingProgressHoldsTheJourneyOnALongerClock() {
+        String id = startAndAwaitDispatch();
+        advanceTo(id, SIGNATURE_STEP);
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate(SIGNATURE_SERVICE, "PENDING", "sent for signature"));
+        sleep(200);
+
+        ApplicationDetail detail = detail(id);
+        assertThat(detail.awaitingSignature()).isTrue();
+        assertThat(detail.currentStep()).isEqualTo(SIGNATURE_STEP);
+        assertThat(eventTypes(detail)).contains("AWAITING_SIGNATURE");
+        // The customer's rail must show the step as still out, not as answered — the module has
+        // been asked and has not finished, which is exactly what in-flight means.
+        assertThat(detail.steps().get(SIGNATURE_STEP - 1).status()).isEqualTo(StepView.IN_FLIGHT);
+
+        // The ORDINARY clock has already expired: a module gets thirty seconds and this sweep
+        // passes zero. The journey survives because the wait is a person's, not a module's.
+        store.sweepTimeouts(Duration.ZERO);
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.IN_PROGRESS);
+    }
+
+    /**
+     * The other half of the same rule, and the reason this is not simply a {@code continue} in
+     * the sweeper: an unbounded exemption hands back the failure the sweeper exists to prevent,
+     * a row sitting IN_PROGRESS for the life of the database.
+     */
+    @Test
+    void theSignatureHoldIsALongerClockAndNotAnExemptionFromOne() {
+        String id = startAndAwaitDispatch();
+        advanceTo(id, SIGNATURE_STEP);
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate(SIGNATURE_SERVICE, "PENDING", "sent for signature"));
+        sleep(200);
+        assertThat(detail(id).awaitingSignature()).isTrue();
+
+        sleep(SIGNATURE_TIMEOUT_MS + 300);       // the customer walked away
+        store.sweepTimeouts(Duration.ofMinutes(5));
+
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.FAILED);
+        assertThat(detail(id).awaitingSignature()).isFalse();
+    }
+
+    @Test
+    void signingReleasesTheHoldAndTheJourneyCarriesOn() {
+        String id = startAndAwaitDispatch();
+        advanceTo(id, SIGNATURE_STEP);
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate(SIGNATURE_SERVICE, "PENDING", "sent for signature"));
+        sleep(200);
+        // The module's SECOND report — its real answer, deferred until the customer acted. It is
+        // still the current step, which is the whole point of holding rather than advancing.
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate(SIGNATURE_SERVICE, "SIGNED", "signed by the customer"));
+        awaitDispatchOf(id, SIGNATURE_STEP + 1);
+
+        assertThat(detail(id).awaitingSignature()).isFalse();
+        assertThat(detail(id).currentStep()).isEqualTo(SIGNATURE_STEP + 1);
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.IN_PROGRESS);
+    }
+
+    @Test
+    void decliningEndsTheJourneyAndClearsTheHold() {
+        String id = startAndAwaitDispatch();
+        advanceTo(id, SIGNATURE_STEP);
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate(SIGNATURE_SERVICE, "PENDING", "sent for signature"));
+        sleep(200);
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate(SIGNATURE_SERVICE, "DECLINED", "customer declined"));
+        sleep(200);
+
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.REJECTED);
+        assertThat(detail(id).awaitingSignature()).isFalse();
+    }
+
+    /**
+     * The long rope is for the one wait that is not the software's fault. A module that is
+     * merely slow must still be given up on at the ordinary timeout, or the mechanism that
+     * catches a broken module has been quietly disabled for everybody.
+     */
+    @Test
+    void aProgressReportFromAnyOtherServiceGetsTheOrdinaryClock() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "IN_PROGRESS", "still thinking"));
+        sleep(200);
+        assertThat(detail(id).awaitingSignature()).isFalse();
+
+        store.sweepTimeouts(Duration.ZERO);
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.FAILED);
+    }
+
     /** Only ACCEPTED parks, so a refusal still ends where it happened and offers no button. */
     @Test
     void aRejectionInDemoModeEndsTheJourneyRatherThanParkingIt() {
         engine.setDemoStepping(true);
-        String id = generator.createAndStart().getId();
+        String id = generator.createAndStart((String) null).getId();
         engine.proceed(id);
         awaitDispatchOf(id, 1);
 
@@ -363,8 +479,8 @@ class SagaFlowTest {
     @Test
     void turningDemoSteppingOffReleasesEveryParkedJourney() {
         engine.setDemoStepping(true);
-        String first = generator.createAndStart().getId();
-        String second = generator.createAndStart().getId();
+        String first = generator.createAndStart((String) null).getId();
+        String second = generator.createAndStart((String) null).getId();
 
         engine.setDemoStepping(false);
 
@@ -513,9 +629,18 @@ class SagaFlowTest {
     // ---- helpers ----
 
     private String startAndAwaitDispatch() {
-        String id = generator.createAndStart().getId();
+        String id = generator.createAndStart((String) null).getId();
         awaitDispatchOf(id, 1);
         return id;
+    }
+
+    /** Accept every step before {@code step}, so the journey is sitting on it. */
+    private void advanceTo(String id, int step) {
+        for (int s = 1; s < step; s++) {
+            engine.handleApplicationStatusUpdate(id,
+                    new ApplicationStatusUpdate(serviceIdOf(s), "ACCEPTED", "ok"));
+            awaitDispatchOf(id, s + 1);
+        }
     }
 
     /**

@@ -106,6 +106,15 @@ Parameters:
   # Eight steps, not ten: neo09 and neo10 are analytical modules and left the sequence on
   # 2026-07-29. They still deploy and serve their own UIs — the orchestrator just never
   # dispatches to them. See application.yml.
+  SupportBaseUrl:
+    Type: String
+    Default: ""
+    Description: >-
+      neo-09's address — an ADDRESS, NOT A STEP. It is deliberately not a Step*BaseUrl: nothing
+      is ever dispatched to it. This exists only so a customer who has finished can open a
+      support case through the orchestrator, which is the only door a module is reachable
+      through. Set it in infra/env/*.params: an empty value is still a SET environment variable,
+      so it would override application.yml's localhost default with "" rather than fall back.
 
   # --- module-only ---
   ServiceId:
@@ -276,6 +285,7 @@ Resources:
               - { Name: ORCHESTRATOR_SERVICES_7_SERVICEID, Value: !Ref Step8ServiceId }
               - { Name: ORCHESTRATOR_SERVICES_7_NAME, Value: !Ref Step8Name }
               - { Name: ORCHESTRATOR_SERVICES_7_BASEURL, Value: !Ref Step8BaseUrl }
+              - { Name: SERVICE_09_URL, Value: !Ref SupportBaseUrl }
               - { Name: CORS_ALLOWED_ORIGIN_PATTERNS, Value: !Sub "http://${AlbDnsName},http://localhost:*" }
             - - { Name: JAVA_TOOL_OPTIONS, Value: "-XX:MaxRAMPercentage=70" }
               - { Name: DB_URL, Value: !Sub "jdbc:mysql://${DbEndpoint}:3306/${DbName}" }

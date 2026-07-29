@@ -103,7 +103,7 @@ function toApplication(f, product) {
 }
 
 /** Step 2: the application form for the chosen product. */
-export default function ApplicationForm({ product, onBack, onSubmitted }) {
+export default function ApplicationForm({ product, customerId, onBack, onSubmitted }) {
   const [f, setF] = useState(() => defaults(product));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -118,7 +118,7 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
     setSubmitting(true);
     setError(null);
     try {
-      const created = await api.submitApplication(toApplication(f, product));
+      const created = await api.submitApplication(toApplication(f, product), customerId);
       onSubmitted(created.id);
     } catch (err) {
       setError(err.message);
@@ -334,7 +334,13 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
                   type="number"
                   min={product.minLimit}
                   max={product.maxLimit}
-                  step="100"
+                  // step="any", NOT a round number. HTML5 validates `step` as an offset from
+                  // `min`, and `min` is neo-01's — it moved from 500 to 250 the day the
+                  // catalogue was corrected, at which point step="100" made the form's OWN
+                  // default of 3000 invalid and the browser blocked submit with no visible
+                  // error. A granularity rule derived from somebody else's floor is a trap;
+                  // the range is a real constraint, the roundness was never one.
+                  step="any"
                   value={f.requestedCreditLimit}
                   onChange={set('requestedCreditLimit')}
                   required

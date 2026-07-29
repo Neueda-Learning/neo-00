@@ -17,6 +17,14 @@ public interface ApplicationRepository extends JpaRepository<Application, String
     List<Application> findByApplicantNameContainingIgnoreCaseOrderByCreatedAtDesc(
             String name, Limit limit);
 
+    /**
+     * Everything one customer has, newest first — the whole of their own screen, in one read.
+     *
+     * <p>On the denormalised {@code customer_id} column, for the same reason the name search is:
+     * a customer's home must not cost a JSON parse per row, nor a call to any module.</p>
+     */
+    List<Application> findByCustomerIdOrderByCreatedAtDesc(String customerId, Limit limit);
+
     List<Application> findByOverallStatus(String overallStatus);
 
     long countByOverallStatus(String overallStatus);

@@ -162,15 +162,56 @@ Everything else only overrides the URLs:
 Spring Boot does **not** merge collections across property sources: the highest-precedence
 source that supplies `orchestrator.services` supplies all of it. So an environment that
 wants nine steps must supply all nine — which is why the params file lists every slot
-explicitly rather than patching the list. `GET /api/v1/services` returning **ten** rows is
+explicitly rather than patching the list. `GET /api/v1/services` returning **eight** rows is
 the check that it worked.
 
-Steps 9 and 10 are the two *analytical* modules. In the capstone spec they observe the
-journey rather than sit inside it; here they are dispatched like any other step, so that all
-ten teams exercise the same contract and every module can be proven live. When their briefs
-land they come out of the sequence and read the journey instead.
+`neo-09` is reachable, but only through one door: `SERVICE_09_URL` is an **address, not a
+step**, used solely by `POST /api/v1/applications/{id}/support-case` so a customer who has
+finished can open a support case. Nothing dispatches to it.
+
+### Step 6 waits for the customer
+
+Seven of the eight steps are a module thinking. The sixth is a person reading. `neo-06`
+generates a credit agreement, sends it for signature and reports **`PENDING`** — not an
+outcome — so the journey **holds there** instead of advancing. The customer's screen fetches
+the PDF and shows a Sign button; signing reports the fact to `neo-06`, and *its* answer is
+what moves the journey on to steps 7 and 8.
+
+That wait gets its own clock, `SIGNATURE_TIMEOUT` (10 minutes), because the ordinary
+`CALLBACK_TIMEOUT` of 30 seconds is how long a *module* may think and would fail the journey
+while somebody was still reading. It is a longer rope, not an exemption — see
+`api-contract.md` §3.
+
+`neo-06`'s e-sign mock is seeded **`SILENT`** for exactly this reason: on `INSTANT` it signs
+inline, about ten milliseconds after the agreement is created, and there is no moment in
+which a customer could be shown anything. `PUT /esign/config` on that module switches it back
+for demonstrating the auto-modes.
 
 ## What you'll see
+
+**The customer's side starts with a code.** *Customer journey simulation* asks for four
+characters — two letters and two digits, `AB12`. Make one up; as you type, the screen says whether
+it is free or already in use. There is no password, so a code that exists just means you are that
+customer: **identification, not authentication**, and nothing is authorised by it.
+
+Sign in with a code that has history and you land on **your account** — the cards you hold under
+*Your products* (limit, account number, card digits, agreement) and anything still being decided
+under *Your applications*. Both offer **request support**, and show the reply when it comes. An
+application becomes a product once you have signed the agreement. Log out, sign in again with the
+same code, and it is all still there; nothing is stored in the browser, because the code is the
+identity.
+
+Applications the generator makes belong to nobody, so they fill the operator's board and appear on
+no customer's account.
+
+Then: pick a card, fill in the form, and watch the checks tick over down the left. It stops at **Agreement
+Management — waiting for you**, shows the credit agreement as a PDF, and waits. Sign it and
+the last two steps run; when the journey completes, `neo-09`'s support form appears so the
+customer can raise a ticket about the application they have just finished.
+
+The product list and the credit-limit bounds on that form are read live from `neo-01` via
+`GET /api/v1/products` — it owns the catalogue and rejects anything outside it, so a code or a
+limit hardcoded here is an application that dies at step 1.
 
 **Screen 1 · Applications.** Every application with a dot per service: grey not reached,
 blue in flight, then green `ACCEPTED`, red `REJECTED`, amber `REFERRED`, dark red

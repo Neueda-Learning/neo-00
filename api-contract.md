@@ -241,6 +241,28 @@ Each progress report **restarts the 30-second clock**. So send one when somethin
 happened and then send your decision; do not build a polling loop, because a module that reports
 progress forever keeps its application alive forever.
 
+#### The one exception: a wait that belongs to a customer
+
+Thirty seconds is how long a *module* may think. It is an absurd amount of time in which to read a
+credit agreement, so `neo06` — and only `neo06`, named by `orchestrator.signature.service-id` — gets
+a different clock when it reports progress: the journey is marked **awaiting signature** and
+measured against `orchestrator.signature.timeout` (10 minutes) instead. An `AWAITING_SIGNATURE` row
+is added to the event log and `awaitingSignature: true` appears on the board row and on `/journey`,
+which is how the customer's page knows to show the agreement and a Sign button.
+
+The mark is cleared by the module's next report, whatever it says. **The rope is longer, not
+infinite** — an unbounded wait is a row that sits `IN_PROGRESS` for the life of the database, which
+is the failure the sweeper exists to prevent.
+
+> ⚠️ **Our clock wins, and it is shorter than the module's own.** `neo06`'s envelope expiry is
+> measured in days. Past the ten minutes the orchestrator fails the journey while the module's case
+> is still `PENDING` and would still accept a signature — knowingly orphaned. The customer's page
+> only offers a Sign button while the journey is still running, so nobody is shown a dead button;
+> an operator looking at `neo06`'s own screens may still see a live-looking case.
+
+This is the one place where holding at a step is correct rather than a bug. Everywhere else, a
+module that goes quiet is a module that has failed.
+
 ### A word the orchestrator does not know
 
 It is recorded on the event log, but the journey does not advance and the sweeper fails it at 30
@@ -336,9 +358,16 @@ refuse the request with a `400`.
 | `GET /api/v1/applications` | board rows: id, applicant, product, ten step statuses, overall |
 | `GET /api/v1/applications?name=` | **§4 application objects** whose applicant name contains `name` (substring, case-insensitive; blank matches nothing) |
 | `GET /api/v1/applications/{id}` | **the §4 application object** — the same one the dispatch envelope carries. `404` if unknown |
-| `GET /api/v1/applications/{id}/journey` | the board row + the application + its full append-only event log |
+| `GET /api/v1/applications/{id}/journey` | the board row + the application + one entry per step + its full append-only event log |
 | `GET /api/v1/events?serviceId=&limit=` | the event log filtered to one service |
 | `GET /api/v1/services` | per service: in-progress count + count per status |
+| `GET /api/v1/products` | the live product catalogue, proxied from `neo01` (below) |
+| `PUT /api/v1/customers/{code}` | sign in as `AB12` — creates the code if new, returns `{customerId, isNew, items[]}` (below) |
+| `GET /api/v1/customers/{code}` | what that customer has; `404` if the code has never been used |
+| `GET /api/v1/applications/{id}/agreement` | the customer's view of their credit agreement, proxied from `neo06` (below) |
+| `GET /api/v1/applications/{id}/agreement/document` | that agreement as a PDF |
+| `POST /api/v1/applications/{id}/agreement/sign` · `/decline` | report what the customer did with it |
+| `POST /api/v1/applications/{id}/support-case` | open a support case, proxied to `neo09` (below) |
 | `GET /api/v1/generator` · `POST /api/v1/generator` | the start/stop toggle `{enabled, intervalMs}` |
 | `GET /api/v1/demo-mode` · `POST /api/v1/demo-mode` | demo stepping `{enabled, parked}` (below) |
 | `POST /api/v1/applications/{id}/proceed` | send the step a parked journey is waiting on (below) |
@@ -384,8 +413,74 @@ A held journey is also **exempt from the callback timeout**: it is silent becaus
 not because a module went quiet. Without that exemption every demo would die 30 seconds into its
 first pause, looking exactly like a broken module.
 
+A held journey is also **exempt from the callback timeout**: it is silent because nobody was asked,
+not because a module went quiet. This is a true exemption, unlike the signature hold in §3, which
+only gets a longer clock — there, a module *has* been asked and could still have failed.
+
 Every dispatch, ack, status update, timeout and journey transition is appended to
 `application_event` and **never updated or deleted** — that table is the system of record.
+
+### The four proxied endpoints (the orchestrator as a client)
+
+Everywhere else the orchestrator is the thing modules talk to. These four are the reverse: a
+customer's browser needs something a module owns, and it goes through here.
+
+**It is one hop, and it is deliberate.** A browser could call those modules directly, but then the
+page needs each module's address, every module's CORS policy has to admit this origin, and on AWS —
+where each module sits behind its own path prefix on a shared load balancer — the addresses are
+different again. Proxying keeps §1's rule that the orchestrator is the only door.
+
+| Route | Goes to | Notes |
+|---|---|---|
+| `GET /api/v1/products` | `neo01` `GET /products` + `/products/{code}/versions` | only rows the module marks `current` **and** `active`; `[]` when it is unreachable, and the picker falls back to its own copy |
+| `GET …/agreement` | `neo06` `GET /cases/{id}` | **projected**, not passed through — terms and status only, no envelope id or operator timeline |
+| `GET …/agreement/document` | `neo06` `GET /cases/{id}/document` | `application/pdf`, `Cache-Control: no-store` |
+| `POST …/agreement/sign` · `/decline` | `neo06` `POST /cases/{id}/signature-events` | the envelope id is read from the case here, never sent by the browser |
+| `POST …/support-case` | `neo09` `POST /api/v1/support/execute` | body `{category, description}`; the id, correlation id and application are added here |
+
+Three things worth knowing:
+
+- **None of them decides anything.** Signing reports a fact to `neo06`; whether the journey moves is
+  `neo06`'s answer, arriving on the ordinary §3 `PUT`. The orchestrator never advances a journey on
+  the strength of a button.
+- **`neo09` is addressed, not sequenced.** It is an analytical module and is deliberately absent from
+  `orchestrator.services[]`, so nothing is ever dispatched to it. `SERVICE_09_URL` exists only for
+  this one call.
+- **One support case per application.** `neo09` derives its case id from the correlation id, so a
+  second request returns the first case and the `202` carries no new reference.
+
+A module's own refusal keeps its status and its sentence (`404` unknown, `409` already decided or
+expired). A module failing or being unreachable becomes a `502` in words a customer can read, never
+a status code.
+
+### Who applied — `?customerId=AB12`
+
+A customer signs in on the customer surface with a four-character code, two letters and two
+digits. `POST /api/v1/applications?customerId=AB12` records it **on the application row**, which
+is what makes "your products" possible at all.
+
+**A query parameter and deliberately not a field of the §4 application object.** Adding a key
+there would be additive rather than breaking — but every module binds that object into a typed
+record, and the orchestrator cannot verify from here that all ten of them, the sidecar and the
+template tolerate one they have never seen. **Nothing about this reaches a module**: the payload is
+stored exactly as it was sent, and a test asserts the code is absent from it.
+
+The rule has no exception — the parameter names the customer whatever the body, including on the
+no-body fixture path, which is how a customer's history is seeded without filling the form eight
+times. Omitted, the application belongs to nobody, which is right for the generator and for the
+backoffice's **+ one**. An unknown code is a `404`, never a silent create.
+
+> ⚠️ **This is identification, not authentication, and nothing is authorised by it.** There is no
+> password, so "that code is taken" and "that code is yours" are the same fact. The code decides
+> which applications a customer's own screen *lists*; `/journey`, `/agreement`, `/agreement/sign`
+> and `/support-case` all still key on the application id alone and check no ownership — anybody
+> holding an id can read and act on it. That is fine for a single-user demonstration stack, and it
+> is written down so nobody mistakes the login screen for a security boundary.
+
+An application becomes a **product** once `currentStep` is past the signature step **and** the
+journey is `COMPLETED` or still `IN_PROGRESS`. The liveness half is not optional: `currentStep` is
+never rewound, so a journey that dies at step 7 or 8 keeps that number for ever and a plain "past
+step six" test would show somebody an account number that was never opened.
 
 ---
 

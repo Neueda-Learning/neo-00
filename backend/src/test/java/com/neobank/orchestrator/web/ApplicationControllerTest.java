@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.neobank.orchestrator.customer.CustomerService;
 import com.neobank.orchestrator.domain.Application;
 import com.neobank.orchestrator.generator.GeneratorService;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationDetail;
@@ -54,53 +55,97 @@ class ApplicationControllerTest {
     @MockBean
     SagaEngine engine;
 
+    @MockBean
+    CustomerService customers;
+
     private void stubDetail(String id, String applicant, String product) {
         when(store.detail(id)).thenReturn(Optional.of(
-                new ApplicationDetail(id, applicant, product, 8000, "WEB", 0, null,
-                        Application.IN_PROGRESS, Map.of(), Map.of(), null, null, List.of())));
+                new ApplicationDetail(id, applicant, product, 8000, "WEB", 0, null, false,
+                        Application.IN_PROGRESS, Map.of(), Map.of(), null, null,
+                        List.of(), List.of())));
     }
 
     @Test
     void aSubmittedApplicationIsCreatedFromTheBody() throws Exception {
         Application app = new Application("APP-0007", "corr", "Ada Byron",
-                "CREDIT_CARD_PLATINUM", 8000, "WEB", "{}");
-        when(generator.createAndStart(anyMap())).thenReturn(app);
-        stubDetail("APP-0007", "Ada Byron", "CREDIT_CARD_PLATINUM");
+                "CREDIT_CARD_REWARDS", 8000, "WEB", "{}");
+        when(generator.createAndStart(anyMap(), any())).thenReturn(app);
+        stubDetail("APP-0007", "Ada Byron", "CREDIT_CARD_REWARDS");
 
         mvc.perform(post("/api/v1/applications")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"channel":"WEB",
                                  "applicant":{"fullName":"Ada Byron"},
-                                 "product":{"productCode":"CREDIT_CARD_PLATINUM",
+                                 "product":{"productCode":"CREDIT_CARD_REWARDS",
                                             "requestedCreditLimit":8000}}
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("APP-0007"))
-                .andExpect(jsonPath("$.productCode").value("CREDIT_CARD_PLATINUM"));
+                .andExpect(jsonPath("$.productCode").value("CREDIT_CARD_REWARDS"));
 
-        verify(generator).createAndStart(anyMap());
+        verify(generator).createAndStart(anyMap(), any());
+    }
+
+    /**
+     * Who applied rides as a query parameter and reaches the row, never the body. The body is the
+     * api-contract §4 object that ten modules bind into typed records; a key they have never seen
+     * is not something this orchestrator can verify from here.
+     */
+    @Test
+    void aCustomerCodeOnTheQueryStringIsPassedThroughToTheApplication() throws Exception {
+        Application app = new Application("APP-0009", "corr", "Ada Byron",
+                "CREDIT_CARD_REWARDS", 8000, "WEB", "{}", "AB12");
+        when(customers.exists("AB12")).thenReturn(true);
+        when(generator.createAndStart(anyMap(), eq("AB12"))).thenReturn(app);
+        stubDetail("APP-0009", "Ada Byron", "CREDIT_CARD_REWARDS");
+
+        mvc.perform(post("/api/v1/applications?customerId=ab12")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"applicant":{"fullName":"Ada Byron"},
+                                 "product":{"productCode":"CREDIT_CARD_REWARDS"}}
+                                """))
+                .andExpect(status().isCreated());
+
+        // Uppercased on the way in — MySQL's collation is case-insensitive and H2's is not.
+        verify(generator).createAndStart(anyMap(), eq("AB12"));
+    }
+
+    @Test
+    void applyingAsACodeNobodySignedInWithIsRefused() throws Exception {
+        when(customers.exists("ZZ99")).thenReturn(false);
+
+        mvc.perform(post("/api/v1/applications?customerId=ZZ99")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"applicant":{"fullName":"Ada Byron"},
+                                 "product":{"productCode":"CREDIT_CARD_REWARDS"}}
+                                """))
+                .andExpect(status().isNotFound());
+
+        verify(generator, never()).createAndStart(anyMap(), any());
     }
 
     @Test
     void noBodyStillGeneratesAFixture() throws Exception {
         Application app = new Application("APP-0001", "corr", "Maria Nowak",
-                "CREDIT_CARD_PREMIUM", 3000, "MOBILE_APP", "{}");
-        when(generator.createAndStart()).thenReturn(app);
-        stubDetail("APP-0001", "Maria Nowak", "CREDIT_CARD_PREMIUM");
+                "CREDIT_CARD_STANDARD", 3000, "MOBILE_APP", "{}");
+        when(generator.createAndStart(any())).thenReturn(app);
+        stubDetail("APP-0001", "Maria Nowak", "CREDIT_CARD_STANDARD");
 
         mvc.perform(post("/api/v1/applications"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("APP-0001"));
 
-        verify(generator).createAndStart();
+        verify(generator).createAndStart(any());
     }
 
     @Test
     void aSubmissionMissingTheApplicantIsRejected() throws Exception {
         mvc.perform(post("/api/v1/applications")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"product\":{\"productCode\":\"CREDIT_CARD_PLATINUM\"}}"))
+                        .content("{\"product\":{\"productCode\":\"CREDIT_CARD_REWARDS\"}}"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -153,7 +198,7 @@ class ApplicationControllerTest {
                 "applicationId", id,
                 "channel", "WEB",
                 "applicant", Map.of("fullName", fullName, "dateOfBirth", "1996-04-11"),
-                "product", Map.of("productCode", "CREDIT_CARD_PLATINUM",
+                "product", Map.of("productCode", "CREDIT_CARD_REWARDS",
                         "requestedCreditLimit", 8000));
     }
 
@@ -171,7 +216,7 @@ class ApplicationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.applicationId").value("APP-0001"))
                 .andExpect(jsonPath("$.applicant.fullName").value("Maria Nowak"))
-                .andExpect(jsonPath("$.product.productCode").value("CREDIT_CARD_PLATINUM"))
+                .andExpect(jsonPath("$.product.productCode").value("CREDIT_CARD_REWARDS"))
                 // The board row's fields must NOT be here — this is the application, not the view.
                 .andExpect(jsonPath("$.overallStatus").doesNotExist())
                 .andExpect(jsonPath("$.events").doesNotExist());
@@ -188,7 +233,7 @@ class ApplicationControllerTest {
 
     @Test
     void theJourneyViewKeepsTheBoardRowAndTheEventLog() throws Exception {
-        stubDetail("APP-0001", "Maria Nowak", "CREDIT_CARD_PLATINUM");
+        stubDetail("APP-0001", "Maria Nowak", "CREDIT_CARD_REWARDS");
 
         mvc.perform(get("/api/v1/applications/{id}/journey", "APP-0001"))
                 .andExpect(status().isOk())

@@ -5,20 +5,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-/** The Premium tier. Record-only — it announces the routing and does nothing else. */
+/** The Rewards tier. Record-only — it announces the routing and does nothing else. */
 @Service
-public class PremiumCardHandler implements ProductHandler {
+public class RewardsCardHandler implements ProductHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(PremiumCardHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(RewardsCardHandler.class);
 
     @Override
     public String productCode() {
-        return "CREDIT_CARD_PREMIUM";
+        return "CREDIT_CARD_REWARDS";
     }
 
     @Override
     public void handle(String applicationId, Map<String, Object> application) {
-        log.info("PREMIUM handler · {} · applicant='{}' — everyday-tier onboarding",
+        log.info("REWARDS handler · {} · applicant='{}' — rewards-tier onboarding",
                 applicationId, ProductHandler.applicantName(application));
     }
 }

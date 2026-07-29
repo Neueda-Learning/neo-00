@@ -34,11 +34,23 @@ export const api = {
   // Backoffice "+ one": no body, the orchestrator generates a fixture applicant.
   createApplication: () => request('/api/v1/applications', { method: 'POST' }),
   // Customer journey: the attendee's filled-in Application object (api-contract §4 shape).
-  submitApplication: (application) =>
-    request('/api/v1/applications', {
-      method: 'POST',
-      body: JSON.stringify(application),
-    }),
+  // Who is applying rides as a query parameter, not a field of the body — the body is the object
+  // ten modules bind into typed records, and it is not ours to add keys to.
+  submitApplication: (application, customerId) =>
+    request(
+      '/api/v1/applications' + (customerId ? `?customerId=${customerId}` : ''),
+      { method: 'POST', body: JSON.stringify(application) }
+    ),
+
+  // ---- signing in ----
+
+  // Idempotent: creates the code if it is new, and either way returns everything that customer
+  // has. `isNew` off THIS response is what the greeting reads — never the typing hint below,
+  // which is a separate request and can disagree with it.
+  signIn: (code) => request(`/api/v1/customers/${code}`, { method: 'PUT' }),
+  // What a known customer has. Throws on 404, which is how the login hint tells "already in use"
+  // from "free" — see LoginScreen for why only a 404 may be read that way.
+  customer: (code) => request(`/api/v1/customers/${code}`),
 
   events: (serviceId, limit = 200) =>
     request(
@@ -46,6 +58,10 @@ export const api = {
     ),
 
   services: () => request('/api/v1/services'),
+
+  // The live product catalogue, proxied from the module that owns it. An empty list means that
+  // module is unreachable — the picker falls back to its own copy rather than showing nothing.
+  products: () => request('/api/v1/products'),
 
   generator: () => request('/api/v1/generator'),
   setGenerator: (body) =>
@@ -62,4 +78,31 @@ export const api = {
   // Send the step a parked journey is waiting on. 409 if it is not parked, which the
   // request helper surfaces as the orchestrator's own message.
   proceed: (id) => request(`/api/v1/applications/${id}/proceed`, { method: 'POST' }),
+
+  // ---- the customer's own two actions ----
+  //
+  // Both go through the orchestrator to the module that owns them. A browser could call those
+  // modules directly, but then this page would need their addresses, their CORS policies would
+  // have to admit it, and on AWS the addresses are different again.
+
+  // The agreement's terms and whether it is this customer's to sign yet.
+  agreement: (id) => request(`/api/v1/applications/${id}/agreement`),
+  // A URL rather than a fetch: the PDF is for an <iframe> to load, not for us to hold in memory.
+  agreementDocumentUrl: (id) => `${BASE}/api/v1/applications/${id}/agreement/document`,
+  // Neither of these advances the journey. They report a fact to the module that owns the
+  // agreement; whether the journey moves is its answer, sent back the ordinary way.
+  signAgreement: (id) => request(`/api/v1/applications/${id}/agreement/sign`, { method: 'POST' }),
+  declineAgreement: (id) =>
+    request(`/api/v1/applications/${id}/agreement/decline`, { method: 'POST' }),
+
+  // Open a support case about a finished application. One per application: the support module
+  // derives its case id from the correlation id, so a second send returns the first case.
+  openSupportCase: (id, body) =>
+    request(`/api/v1/applications/${id}/support-case`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  // The case this customer already has, so the page can keep it open and show what the bank has
+  // said back. `null` (a 204) means they have none and should be offered the form.
+  supportCase: (id) => request(`/api/v1/applications/${id}/support-case`),
 };

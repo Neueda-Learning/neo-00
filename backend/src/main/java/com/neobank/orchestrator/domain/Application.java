@@ -54,6 +54,22 @@ public class Application {
     private String channel;
 
     /**
+     * Who applied — the four-character code they signed in with, or {@code null}.
+     *
+     * <p><b>Null is the normal case for a fixture.</b> The generator and the backoffice's "+ one"
+     * create applications nobody typed a code for, and they must stay null: that is exactly what
+     * keeps them filling the operator board while appearing on no customer's own screen.</p>
+     *
+     * <p>Denormalised onto the row rather than read out of {@code payloadJson}, for the same
+     * reason {@code applicantName} is — and deliberately <em>not</em> a field of the api-contract
+     * §4 application object. Every module binds that object into a typed record, and this
+     * orchestrator cannot verify from here that all ten of them tolerate a key they have never
+     * seen. It arrives as a query parameter on the create call instead. See {@link Customer}.</p>
+     */
+    @Column(name = "customer_id", length = 4)
+    private String customerId;
+
+    /**
      * The whole application object as it was sent, ~1.2 KB of JSON.
      *
      * <p>An explicit {@code VARCHAR} rather than {@code @Lob}/{@code TEXT}: H2 and MySQL
@@ -79,6 +95,23 @@ public class Application {
      */
     @Column(name = "pending_step")
     private Integer pendingStep;
+
+    /**
+     * The agreement step is waiting for the customer to sign: {@code null} means nobody is being
+     * waited on, a timestamp is when the wait started.
+     *
+     * <p><b>Not the same hold as {@link #pendingStep}, and deliberately a second column.</b> An
+     * operator hold is released by a click and turning demo stepping off releases every one of
+     * them; a customer hold is released by the module reporting what the customer did, and must
+     * survive that. Sharing a column would make "release everything parked" cancel a signature
+     * the customer is still reading.</p>
+     *
+     * <p>The step is not stored because it does not need to be: unlike an operator hold, nothing
+     * here will be dispatched on release. {@code currentStep} still points at the signature
+     * service, which is still the one that will answer.</p>
+     */
+    @Column(name = "awaiting_signature_at")
+    private Instant awaitingSignatureAt;
 
     /**
      * What the services have reported so far, accumulated — the journey's own scratchpad.
@@ -114,8 +147,16 @@ public class Application {
         // JPA
     }
 
+    /** An application nobody signed in for — a generated fixture, or the backoffice's "+ one". */
     public Application(String id, String correlationId, String applicantName, String productCode,
                        Integer requestedLimit, String channel, String payloadJson) {
+        this(id, correlationId, applicantName, productCode, requestedLimit, channel, payloadJson,
+                null);
+    }
+
+    public Application(String id, String correlationId, String applicantName, String productCode,
+                       Integer requestedLimit, String channel, String payloadJson,
+                       String customerId) {
         this.id = id;
         this.correlationId = correlationId;
         this.applicantName = applicantName;
@@ -123,6 +164,7 @@ public class Application {
         this.requestedLimit = requestedLimit;
         this.channel = channel;
         this.payloadJson = payloadJson;
+        this.customerId = customerId;
         this.currentStep = 0;
         this.overallStatus = IN_PROGRESS;
     }
@@ -165,6 +207,11 @@ public class Application {
         return channel;
     }
 
+    /** No setter, deliberately: who applied is decided when the application is created. */
+    public String getCustomerId() {
+        return customerId;
+    }
+
     public String getPayloadJson() {
         return payloadJson;
     }
@@ -190,6 +237,20 @@ public class Application {
     /** Parked in demo mode, waiting for someone to press Proceed. */
     public boolean isAwaitingOperator() {
         return pendingStep != null;
+    }
+
+    public Instant getAwaitingSignatureAt() {
+        return awaitingSignatureAt;
+    }
+
+    public void setAwaitingSignatureAt(Instant awaitingSignatureAt) {
+        this.awaitingSignatureAt = awaitingSignatureAt;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Held at the agreement step, waiting for the customer to sign or decline. */
+    public boolean isAwaitingSignature() {
+        return awaitingSignatureAt != null;
     }
 
     public String getOutputsJson() {

@@ -53,6 +53,18 @@ public class ApplicationEvent {
     public static final String AWAITING_OPERATOR = "AWAITING_OPERATOR";
     /** An operator released a parked journey; the step is dispatched immediately after. */
     public static final String RELEASED_BY_OPERATOR = "RELEASED_BY_OPERATOR";
+    /**
+     * The agreement step is waiting for the customer to sign.
+     *
+     * <p>Recorded when the signature service reports progress rather than a decision. The journey
+     * is not parked in the {@link #AWAITING_OPERATOR} sense — nobody at the bank can release it,
+     * and the module is still the one that will answer. What changes is only the clock: see
+     * {@code orchestrator.signature.timeout}.</p>
+     *
+     * <p>Carries no {@code status}, so the step's dot stays in-flight — the service HAS been
+     * asked and has not finished, which is exactly what in-flight means.</p>
+     */
+    public static final String AWAITING_SIGNATURE = "AWAITING_SIGNATURE";
     /** No callback arrived within the timeout. */
     public static final String TIMEOUT = "TIMEOUT";
     /** The journey reached a terminal state. */
