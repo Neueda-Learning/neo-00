@@ -18,6 +18,7 @@ const RESIDENTIAL = ['OWNER', 'MORTGAGE', 'RENTING', 'LIVING_WITH_FAMILY', 'OTHE
 const EMPLOYMENT = ['PERMANENT', 'CONTRACT', 'SELF_EMPLOYED', 'STUDENT', 'RETIRED', 'UNEMPLOYED'];
 
 const readable = (v) => ({ value: v, label: v.replace(/_/g, ' ').toLowerCase() });
+const lowerFirst = (value) => value.charAt(0).toLowerCase() + value.slice(1);
 const CARD_IMAGES = {
   premium: premiumCardImage,
   platinum: platinumCardImage,
@@ -135,7 +136,7 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
         <h2 id="application-benefits-title">More ways to earn</h2>
         <ul>
           {product.features.map((feature) => (
-            <li key={feature}>Complimentary {feature}</li>
+            <li key={feature}>Complimentary {lowerFirst(feature)}</li>
           ))}
         </ul>
       </section>
