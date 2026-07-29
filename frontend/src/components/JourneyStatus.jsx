@@ -161,7 +161,13 @@ export default function JourneyStatus({ applicationId, product, kind, onRestart,
 
           {signing && <SignAgreement applicationId={applicationId} />}
 
-          {isProduct && <YourCard detail={detail} applicationId={applicationId} />}
+          {/* detail is guarded here, not inside YourCard: opened straight from an item, `kind`
+              is known synchronously from the click but `detail` is still the async /journey
+              fetch's first `null` for one render. Without this YourCard dereferences
+              detail.outputs on that frame and the whole tree unmounts blank — no console-visible
+              symptom beyond a white screen, which is what "nothing happens on Open" turned out
+              to be. */}
+          {isProduct && detail && <YourCard detail={detail} applicationId={applicationId} />}
 
           {/* Support once there is something to ask about: the agreement is with them, or the
               journey has finished one way or another. Not during the automated steps, which take
