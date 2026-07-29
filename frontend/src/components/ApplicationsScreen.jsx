@@ -2,11 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Badge,
+  Button,
   Caption,
   DataTable,
   EmptyState,
   Field,
   Grid,
+  KeyValue,
   MetricTile,
   PageHeader,
   SearchInput,
@@ -31,7 +33,7 @@ import { clock, eventTone, journeyTone, money, stepTone, time } from '../status.
  * the orchestrator: it owns the applications, hydrates nothing, and its whole job is
  * being watched. A module board that copies this line fails its Definition of Done.</p>
  */
-export default function ApplicationsScreen({ rows, summary, services }) {
+export default function ApplicationsScreen({ rows, summary, services, busy, onProceed }) {
   const [openId, setOpenId] = useState(null);
   const [serviceFilter, setServiceFilter] = useState('');
   const [query, setQuery] = useState('');
@@ -79,7 +81,29 @@ export default function ApplicationsScreen({ rows, summary, services }) {
       key: 'overallStatus',
       header: 'Outcome',
       tight: true,
-      render: (r) => <Badge tone={journeyTone(r.overallStatus)}>{r.overallStatus}</Badge>,
+      // A parked journey shows the button that releases it instead of its status. This is
+      // the one cell that answers "what is happening with this application", and while demo
+      // stepping holds it the honest answer is "it is waiting for you".
+      render: (r) =>
+        r.pendingStep == null ? (
+          <Badge tone={journeyTone(r.overallStatus)}>{r.overallStatus}</Badge>
+        ) : (
+          <Button
+            variant="primary"
+            size="sm"
+            busy={busy === `proceed:${r.id}`}
+            busyLabel="Sending…"
+            // The row toggles its own event log on click; without this, releasing a step
+            // would collapse the log you are demonstrating.
+            onClick={(e) => {
+              e.stopPropagation();
+              onProceed(r.id);
+            }}
+            title={`Send step ${r.pendingStep} to ${serviceAt(services, r.pendingStep)}`}
+          >
+            ▶ Step {r.pendingStep} · {serviceAt(services, r.pendingStep)}
+          </Button>
+        ),
     },
     { key: 'createdAt', header: 'Started', render: (r) => time(r.createdAt) },
   ];
@@ -160,6 +184,11 @@ export default function ApplicationsScreen({ rows, summary, services }) {
   );
 }
 
+/** Who a step belongs to, for the Proceed button's label. Falls back to the number alone. */
+function serviceAt(services, step) {
+  return services.find((s) => s.step === step)?.serviceId ?? `step ${step}`;
+}
+
 /** The full append-only log for one application, refreshed while the row is open. */
 function ApplicationLog({ applicationId }) {
   const [detail, setDetail] = useState(null);
@@ -189,8 +218,26 @@ function ApplicationLog({ applicationId }) {
   if (error) return <Alert tone="negative">{error}</Alert>;
   if (!detail) return <EmptyState flush title="Loading…" />;
 
+  const outputs = Object.entries(detail.outputs ?? {});
+
   return (
     <>
+      {outputs.length > 0 && (
+        <>
+          <KeyValue
+            items={outputs.map(([label, value]) => ({
+              label,
+              value: value === null || value === undefined ? '—' : String(value),
+              mono: true,
+            }))}
+          />
+          <Caption>
+            What the services produced, accumulated. Every later step is dispatched
+            with this map beside the application — it is how the approved limit
+            reaches the agreement and the account id reaches the card.
+          </Caption>
+        </>
+      )}
       <Timeline
         items={detail.events.map((e) => ({
           id: e.id,

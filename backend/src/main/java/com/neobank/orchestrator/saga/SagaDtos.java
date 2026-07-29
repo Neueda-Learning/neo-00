@@ -16,12 +16,21 @@ public final class SagaDtos {
 
     // ---- outbound: orchestrator → service ----
 
-    /** The envelope POSTed to a service's {@code /api/v1/applications} (api-contract §2). */
+    /**
+     * The envelope POSTed to a service's {@code /api/v1/applications} (api-contract §2).
+     *
+     * <p>{@code outputs} is what earlier services reported, accumulated — the approved limit from
+     * neo-05, the account id from neo-07, and so on. It is a <b>sibling</b> of {@code application}
+     * and is never merged into it: the application is what the customer submitted and must be the
+     * same object whether it is pushed here or pulled from {@code GET /{id}}. Empty on step 1, and
+     * empty for as long as nobody reports anything.</p>
+     */
     public record ApplicationRequest(
             String applicationId,
             String correlationId,
             String command,
-            Map<String, Object> application) {
+            Map<String, Object> application,
+            Map<String, Object> outputs) {
     }
 
     // ---- inbound: service → orchestrator ----
@@ -30,15 +39,28 @@ public final class SagaDtos {
      * What a service PUTs to {@code /api/v1/applications/{applicationId}} when it has an answer
      * (api-contract §3).
      *
-     * <p><b>Three fields — no {@code applicationId}, because it is the URL.</b> This is an update to
-     * an application the orchestrator already owns, so the id identifies the resource; carrying it
+     * <p><b>No {@code applicationId}, because it is the URL.</b> This is an update to an
+     * application the orchestrator already owns, so the id identifies the resource; carrying it
      * in the body as well would only create a way for the two to disagree.
      * {@code serviceId} is {@code neo01}…{@code neo10}.</p>
+     *
+     * <p>{@code outputs} is optional and carries what this service <em>produced</em>, as opposed
+     * to {@code comment}, which says why. It is merged into the journey's accumulated map and
+     * ridden forward on every later dispatch. <b>Absent means unchanged</b> — that is what keeps
+     * the modules which never send one entirely unaffected, so it is deliberately not
+     * {@code @NotNull} and an empty map is not the same as no map. Which service may write which
+     * key is fixed in api-contract §3; the merge is last-writer-wins and will not defend itself.</p>
      */
     public record ApplicationStatusUpdate(
             @NotBlank String serviceId,
             @NotBlank String status,
-            String comment) {
+            String comment,
+            Map<String, Object> outputs) {
+
+        /** The overwhelmingly common case: an outcome with nothing to hand on. */
+        public ApplicationStatusUpdate(String serviceId, String status, String comment) {
+            this(serviceId, status, comment, null);
+        }
     }
 
     /** Optional body for a manual {@code POST /api/v1/applications} — all fields optional. */
@@ -52,6 +74,16 @@ public final class SagaDtos {
     public record GeneratorRequest(Boolean enabled, Long intervalMs) {
     }
 
+    /**
+     * The demo-stepping toggle: while it is on, no step is dispatched without an operator
+     * pressing Proceed. {@code parked} is how many journeys are waiting on a click right now.
+     */
+    public record DemoState(boolean enabled, long parked) {
+    }
+
+    public record DemoRequest(Boolean enabled) {
+    }
+
     // ---- views: orchestrator → front end ----
 
     /** One of the ten dots on a board row. */
@@ -63,6 +95,11 @@ public final class SagaDtos {
         public static final String IN_FLIGHT = "in-flight";
     }
 
+    /**
+     * {@code pendingStep} is non-null only while demo stepping has this journey parked, and is
+     * the step the Proceed button will send. The front end uses its presence to decide whether
+     * to draw that button at all.
+     */
     public record ApplicationRow(
             String id,
             String applicantName,
@@ -70,6 +107,7 @@ public final class SagaDtos {
             Integer requestedLimit,
             String channel,
             int currentStep,
+            Integer pendingStep,
             String overallStatus,
             Instant createdAt,
             Instant updatedAt,
@@ -104,6 +142,10 @@ public final class SagaDtos {
      * <p>{@code application} is a parsed object, not the raw {@code payloadJson} string it used to
      * be. Handing a client JSON-inside-a-JSON-string makes every caller parse twice and is the
      * same cleanup already made on the module side's {@code RequestView}.</p>
+     *
+     * <p>{@code outputs} is what the services have reported so far, accumulated — the same map the
+     * dispatch envelope carries. It is where an operator sees the approved limit and the account
+     * id without reading a module's own UI.</p>
      */
     public record ApplicationDetail(
             String id,
@@ -112,18 +154,21 @@ public final class SagaDtos {
             Integer requestedLimit,
             String channel,
             int currentStep,
+            Integer pendingStep,
             String overallStatus,
             Map<String, Object> application,
+            Map<String, Object> outputs,
             Instant createdAt,
             Instant updatedAt,
             List<EventView> events) {
 
         public static ApplicationDetail of(Application a, Map<String, Object> application,
+                                           Map<String, Object> outputs,
                                            List<ApplicationEvent> events) {
             return new ApplicationDetail(
                     a.getId(), a.getApplicantName(), a.getProductCode(), a.getRequestedLimit(),
-                    a.getChannel(), a.getCurrentStep(), a.getOverallStatus(), application,
-                    a.getCreatedAt(), a.getUpdatedAt(),
+                    a.getChannel(), a.getCurrentStep(), a.getPendingStep(), a.getOverallStatus(),
+                    application, outputs, a.getCreatedAt(), a.getUpdatedAt(),
                     events.stream().map(EventView::from).toList());
         }
     }

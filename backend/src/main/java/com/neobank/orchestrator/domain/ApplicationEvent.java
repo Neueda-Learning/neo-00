@@ -43,6 +43,16 @@ public class ApplicationEvent {
      * reporting progress would erase itself from the screen that exists to show it.</p>
      */
     public static final String PROGRESS_REPORTED = "PROGRESS_REPORTED";
+    /**
+     * Demo stepping is on and the journey is parked: the next service will not be sent
+     * anything until an operator presses Proceed.
+     *
+     * <p>Carries no {@code status}, so the step's dot stays {@code pending} — nothing has
+     * been asked of that service yet.</p>
+     */
+    public static final String AWAITING_OPERATOR = "AWAITING_OPERATOR";
+    /** An operator released a parked journey; the step is dispatched immediately after. */
+    public static final String RELEASED_BY_OPERATOR = "RELEASED_BY_OPERATOR";
     /** No callback arrived within the timeout. */
     public static final String TIMEOUT = "TIMEOUT";
     /** The journey reached a terminal state. */

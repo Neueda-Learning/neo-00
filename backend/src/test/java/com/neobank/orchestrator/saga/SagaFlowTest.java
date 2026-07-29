@@ -5,15 +5,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.neobank.orchestrator.domain.Application;
 import com.neobank.orchestrator.generator.GeneratorService;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationDetail;
+import com.neobank.orchestrator.saga.SagaDtos.ApplicationRequest;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationRow;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationStatusUpdate;
 import com.neobank.orchestrator.saga.SagaDtos.EventView;
 import com.neobank.orchestrator.saga.SagaDtos.ServiceSummary;
 import com.neobank.orchestrator.saga.SagaDtos.StepView;
+import com.neobank.orchestrator.saga.SagaStore.DispatchTarget;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BooleanSupplier;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,13 +72,14 @@ class SagaFlowTest {
     }
 
     @Test
-    void tenAcceptancesCompleteTheJourney() {
+    void acceptancesFromEveryStepCompleteTheJourney() {
         String id = startAndAwaitDispatch();
 
-        for (int step = 1; step <= 10; step++) {
+        int last = store.serviceSummaries().size();
+        for (int step = 1; step <= last; step++) {
             engine.handleApplicationStatusUpdate(id,
                     new ApplicationStatusUpdate(serviceIdOf(step), "ACCEPTED", "ok"));
-            if (step < 10) {
+            if (step < last) {
                 awaitDispatchOf(id, step + 1);
             }
         }
@@ -247,6 +252,128 @@ class SagaFlowTest {
         // break the endpoint that every service depends on.
     }
 
+    // ---- demo stepping ----
+
+    /**
+     * The toggle lives on a shared bean, so a test that left it on would silently park every
+     * test after it. Turning it off also releases anything this test parked.
+     */
+    @AfterEach
+    void demoSteppingOff() {
+        engine.setDemoStepping(false);
+    }
+
+    @Test
+    void demoSteppingParksTheJourneyBeforeTheVeryFirstDispatch() {
+        engine.setDemoStepping(true);
+
+        String id = generator.createAndStart().getId();
+
+        ApplicationDetail detail = detail(id);
+        assertThat(detail.pendingStep()).isEqualTo(1);
+        assertThat(detail.overallStatus()).isEqualTo(Application.IN_PROGRESS);
+        assertThat(eventTypes(detail)).containsExactly("JOURNEY_STARTED", "AWAITING_OPERATOR");
+        // No special case for the first step: eight steps means eight clicks.
+        sleep(200);
+        assertThat(dispatchCount(detail(id), 1)).isZero();
+    }
+
+    @Test
+    void proceedSendsTheParkedStepAndTheJourneyThenParksAgain() {
+        engine.setDemoStepping(true);
+        String id = generator.createAndStart().getId();
+
+        assertThat(engine.proceed(id)).contains(1);
+        awaitDispatchOf(id, 1);
+        assertThat(detail(id).pendingStep()).isNull();
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "ACCEPTED", "ok"));
+
+        // Parked again — and step 2 stays unsent until the next click.
+        assertThat(detail(id).pendingStep()).isEqualTo(2);
+        sleep(200);
+        assertThat(dispatchCount(detail(id), 2)).isZero();
+    }
+
+    @Test
+    void proceedOnAJourneyThatIsNotParkedDoesNothing() {
+        String id = startAndAwaitDispatch();
+
+        assertThat(engine.proceed(id)).isEmpty();
+        assertThat(engine.proceed("APP-NOPE")).isEmpty();
+    }
+
+    /**
+     * The one that would kill a demo. A parked journey is silent because nothing was asked of
+     * anybody — the sweeper must not read that as a module gone quiet and fail it thirty
+     * seconds into the first pause.
+     */
+    @Test
+    void aParkedJourneyIsNotSweptByTheTimeout() {
+        engine.setDemoStepping(true);
+        String id = generator.createAndStart().getId();
+        assertThat(detail(id).pendingStep()).isEqualTo(1);
+
+        engine.sweepTimeouts(Duration.ZERO);
+
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.IN_PROGRESS);
+        assertThat(eventTypes(detail(id))).doesNotContain("TIMEOUT");
+        // Still held: with stepping on, the sweep must not release it either.
+        assertThat(detail(id).pendingStep()).isEqualTo(1);
+    }
+
+    /**
+     * The restart hole. {@code demoStepping} is in memory and comes back off; {@code pending_step}
+     * is in the database and comes back set — so a journey parked when the process died would
+     * return held with nothing holding it, and the timeout sweep skips parked rows, so nothing
+     * would ever pick it up again.
+     */
+    @Test
+    void aJourneyLeftParkedWhileSteppingIsOffIsReleasedByTheNextSweep() {
+        String id = startAndAwaitDispatch();     // stepping is off
+        store.park(id, 2);                       // exactly what a restart leaves behind
+        assertThat(detail(id).pendingStep()).isEqualTo(2);
+
+        // A generous timeout, so nothing here is failing for being quiet — the release is the
+        // only thing under test.
+        engine.sweepTimeouts(Duration.ofMinutes(5));
+
+        awaitDispatchOf(id, 2);
+        assertThat(detail(id).pendingStep()).isNull();
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.IN_PROGRESS);
+    }
+
+    /** Only ACCEPTED parks, so a refusal still ends where it happened and offers no button. */
+    @Test
+    void aRejectionInDemoModeEndsTheJourneyRatherThanParkingIt() {
+        engine.setDemoStepping(true);
+        String id = generator.createAndStart().getId();
+        engine.proceed(id);
+        awaitDispatchOf(id, 1);
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "REJECTED", "no"));
+
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.REJECTED);
+        assertThat(detail(id).pendingStep()).isNull();
+    }
+
+    /** The way out of an abandoned demo: everything already parked goes on its way. */
+    @Test
+    void turningDemoSteppingOffReleasesEveryParkedJourney() {
+        engine.setDemoStepping(true);
+        String first = generator.createAndStart().getId();
+        String second = generator.createAndStart().getId();
+
+        engine.setDemoStepping(false);
+
+        awaitDispatchOf(first, 1);
+        awaitDispatchOf(second, 1);
+        assertThat(detail(first).pendingStep()).isNull();
+        assertThat(detail(second).pendingStep()).isNull();
+    }
+
     // ---- views ----
 
     @Test
@@ -276,6 +403,111 @@ class SagaFlowTest {
 
         assertThat(forService).isNotEmpty();
         assertThat(forService).allSatisfy(e -> assertThat(e.serviceId()).isEqualTo("neo02"));
+    }
+
+    // ---- outputs ----
+
+    @Test
+    void whatAServiceProducesIsVisibleOnTheJourney() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo01", "ACCEPTED", "ok", Map.of("approvedLimit", 3000)));
+
+        assertThat(detail(id).outputs()).containsEntry("approvedLimit", 3000);
+    }
+
+    @Test
+    void laterServicesAddTheirOwnKeysRatherThanReplacingTheMap() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo01", "ACCEPTED", "ok", Map.of("approvedLimit", 3000)));
+        awaitDispatchOf(id, 2);
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo02", "ACCEPTED", "ok", Map.of("accountId", "CC-0058291")));
+
+        assertThat(detail(id).outputs())
+                .containsEntry("approvedLimit", 3000)
+                .containsEntry("accountId", "CC-0058291");
+    }
+
+    /** Absent means unchanged — the whole reason the modules that ignore outputs are unaffected. */
+    @Test
+    void aStatusUpdateWithNoOutputsLeavesWhatWasAlreadyReported() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo01", "ACCEPTED", "ok", Map.of("approvedLimit", 3000)));
+        awaitDispatchOf(id, 2);
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo02", "ACCEPTED", "nothing to add"));
+
+        assertThat(detail(id).outputs()).containsEntry("approvedLimit", 3000);
+    }
+
+    /**
+     * Dropped whole, not truncated: half a JSON document would reach the next service looking
+     * like data, which is worse than the absence it replaced.
+     */
+    @Test
+    void anOversizedMapIsDroppedWholeAndTheEarlierOneSurvives() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo01", "ACCEPTED", "ok", Map.of("approvedLimit", 3000)));
+        awaitDispatchOf(id, 2);
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo02", "ACCEPTED", "ok", Map.of("essay", "x".repeat(Application.OUTPUTS_MAX))));
+
+        assertThat(detail(id).outputs())
+                .containsEntry("approvedLimit", 3000)
+                .doesNotContainKey("essay");
+    }
+
+    /** Recorded on the log, but a service that is not the current step may not move the journey
+     *  — and that includes moving what the journey has accumulated. */
+    @Test
+    void outputsFromAServiceThatIsNotTheCurrentStepNeverReachTheJourney() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo05", "ACCEPTED", "not my turn", Map.of("approvedLimit", 9999)));
+
+        assertThat(detail(id).outputs()).isEmpty();
+    }
+
+    /**
+     * The one assertion that proves the feature: what step 1 produced is in the envelope step 2
+     * receives. Goes through the same {@code beginDispatch} → {@code toRequest} pair
+     * {@link SagaEngine#dispatch} uses, rather than the stubbed HTTP client.
+     */
+    @Test
+    void theEnvelopeForTheNextStepCarriesWhatEarlierServicesReported() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id, new ApplicationStatusUpdate(
+                "neo01", "ACCEPTED", "ok", Map.of("approvedLimit", 3000, "apr", 24.9)));
+        awaitDispatchOf(id, 2);
+
+        DispatchTarget target = store.beginDispatch(id, 2).orElseThrow();
+        ApplicationRequest envelope = store.toRequest(target, "process-application");
+
+        assertThat(envelope.outputs())
+                .containsEntry("approvedLimit", 3000)
+                .containsEntry("apr", 24.9);
+        // A sibling of the application, never merged into it: the application is what the
+        // customer submitted and must read the same whether pushed here or pulled from /{id}.
+        assertThat(envelope.application()).doesNotContainKey("approvedLimit");
+    }
+
+    @Test
+    void theFirstStepIsDispatchedWithAnEmptyOutputsMapRatherThanNull() {
+        String id = startAndAwaitDispatch();
+
+        DispatchTarget target = store.beginDispatch(id, 1).orElseThrow();
+
+        assertThat(store.toRequest(target, "process-application").outputs()).isEmpty();
     }
 
     // ---- helpers ----

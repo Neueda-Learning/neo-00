@@ -68,6 +68,39 @@ public class Application {
     @Column(name = "current_step", nullable = false)
     private int currentStep;
 
+    /**
+     * Demo stepping: {@code null} means the journey runs itself, a number means it is parked
+     * and this is the step that will be dispatched when an operator releases it.
+     *
+     * <p>One nullable column rather than a boolean plus a target, because the target is not
+     * derivable from {@code currentStep}: parked before the first dispatch it is 1 while
+     * {@code currentStep} is still 0, and parked mid-journey it equals {@code currentStep},
+     * which {@link com.neobank.orchestrator.saga.SagaStore} advances when the callback lands.</p>
+     */
+    @Column(name = "pending_step")
+    private Integer pendingStep;
+
+    /**
+     * What the services have reported so far, accumulated — the journey's own scratchpad.
+     *
+     * <p>Each module may attach an {@code outputs} map to its status update; they are merged
+     * here, last writer wins, and the whole accumulated map rides every later dispatch envelope.
+     * That is how neo-05's approved limit reaches neo-06, neo-07 and neo-08. {@code null} means
+     * nothing has been reported yet, which is not the same as {@code {}}.</p>
+     *
+     * <p>Which module owns which key is fixed in {@code api-contract.md} §3, not decided per
+     * team: a merged map is last-writer-wins, so two modules writing {@code approvedLimit} would
+     * silently overwrite each other and the later step would emboss the wrong number.</p>
+     *
+     * <p>Sized like {@code payloadJson} and for the same reason — an explicit {@code VARCHAR}
+     * both dialects render identically. 2000 characters is ~20× the handful of scalars the
+     * registry allows, and costs 8000 of the 65535 bytes MySQL gives the whole row.</p>
+     */
+    public static final int OUTPUTS_MAX = 2000;
+
+    @Column(name = "outputs_json", length = OUTPUTS_MAX)
+    private String outputsJson;
+
     @Column(name = "overall_status", nullable = false, length = 24)
     private String overallStatus;
 
@@ -142,6 +175,29 @@ public class Application {
 
     public void setCurrentStep(int currentStep) {
         this.currentStep = currentStep;
+        this.updatedAt = Instant.now();
+    }
+
+    public Integer getPendingStep() {
+        return pendingStep;
+    }
+
+    public void setPendingStep(Integer pendingStep) {
+        this.pendingStep = pendingStep;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Parked in demo mode, waiting for someone to press Proceed. */
+    public boolean isAwaitingOperator() {
+        return pendingStep != null;
+    }
+
+    public String getOutputsJson() {
+        return outputsJson;
+    }
+
+    public void setOutputsJson(String outputsJson) {
+        this.outputsJson = outputsJson;
         this.updatedAt = Instant.now();
     }
 

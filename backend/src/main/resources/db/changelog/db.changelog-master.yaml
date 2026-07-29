@@ -3,3 +3,7 @@
 databaseChangeLog:
   - include:
       file: db/changelog/changes/001-create-application.yaml
+  - include:
+      file: db/changelog/changes/002-add-pending-step.yaml
+  - include:
+      file: db/changelog/changes/003-add-outputs.yaml

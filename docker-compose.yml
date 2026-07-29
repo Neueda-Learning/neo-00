@@ -88,6 +88,10 @@ services:
       # must not start firing before the stack is up. Turn it on in the UI.
       GENERATOR_ENABLED: "${GENERATOR_ENABLED:-false}"
       GENERATOR_INTERVAL_MS: "${GENERATOR_INTERVAL_MS:-5000}"
+      # Demo stepping. On, NO step is dispatched until someone presses Proceed on the board —
+      # including the first, so an eight-step journey is eight clicks. For narrating the journey
+      # in front of an audience. Also flippable from the backoffice, which is the usual way.
+      DEMO_STEPPING: "${DEMO_STEPPING:-false}"
       # The ten steps. application.yml already declares all ten — sequence, ids and names —
       # with localhost:900N defaults, which is what you want when the orchestrator runs in
       # your IDE. In here only the URLs change, to compose service names. So the journey is
@@ -100,8 +104,9 @@ services:
       SERVICE_06_URL: http://neo-06:8080
       SERVICE_07_URL: http://neo-07:8080
       SERVICE_08_URL: http://neo-08:8080
-      SERVICE_09_URL: http://neo-09:8080
-      SERVICE_10_URL: http://neo-10:8080
+      # No SERVICE_09_URL / SERVICE_10_URL: neo-09 and neo-10 are analytical modules and are
+      # not in the journey. They still run below with their own UIs; the orchestrator just
+      # never dispatches to them.
     ports:
       - "${API_PORT:-9000}:8080"
     depends_on:
@@ -174,8 +179,27 @@ services:
       SERVICE_NAME: Identity Verification (KYC)
       SERVICE_DOMAIN: kyc
       SERVICE_TEAM: Team 03
-      MOCKED_DEPENDENCIES: id-verification-provider
+      MOCKED_DEPENDENCIES: national-identity-agency,tax-agency
+      ID_PROVIDER_BASE_URL: http://neo-03-mock:8081
     ports: ["9003:8080"]
+  # The only module with a THIRD container. neo-03's topic is "the provider is slow or down",
+  # so it owns a mock of the government identity sources it calls — a National Identity Agency
+  # and, as a fallback, a Tax Agency. Without this the module reaches nothing, and every
+  # application would be parked for a human with KYC_PROVIDER_UNAVAILABLE.
+  #
+  # On AWS the same image runs as a third container inside neo-03's own ECS task; here it is a
+  # sibling service, because compose has no equivalent of a task.
+  #
+  # Turn an agency off at http://localhost:8103 and watch the journey survive it.
+  neo-03-mock:
+    build: ./neo-03/mock-integration
+    # Not optional. A JVM with no container limit sizes its heap from the HOST's RAM and takes
+    # a quarter of it — which is survivable once and is not survivable twelve times.
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8081"
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70"
+    ports: ["8103:8081"]
   frontend-03:
     build: ./neo-03/frontend
     environment: { BACKEND_HOST: neo-03 }

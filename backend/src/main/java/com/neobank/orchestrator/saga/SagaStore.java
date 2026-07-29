@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -72,7 +73,8 @@ public class SagaStore {
 
     /** What the engine needs in order to POST one step. */
     public record DispatchTarget(String applicationId, String correlationId, int step,
-                                 Map<String, Object> application) {
+                                 Map<String, Object> application,
+                                 Map<String, Object> outputs) {
     }
 
     private final ApplicationRepository applications;
@@ -120,7 +122,68 @@ public class SagaStore {
         events.save(new ApplicationEvent(applicationId, step, service.serviceId(),
                 ApplicationEvent.REQUEST_SENT, null, "sent to " + service.name()));
         return Optional.of(new DispatchTarget(applicationId, app.getCorrelationId(), step,
-                readPayload(app.getPayloadJson())));
+                readPayload(app.getPayloadJson()), readPayload(app.getOutputsJson())));
+    }
+
+    /**
+     * Demo stepping: hold the journey here instead of dispatching {@code step}, and say so in
+     * the log. A no-op on an unknown or terminal application — a journey that ended has nothing
+     * left to park.
+     *
+     * <p>The step is <em>stored</em>, not inferred, because {@link #release} has to know what to
+     * dispatch and {@code currentStep} does not answer that before the first dispatch.</p>
+     */
+    @Transactional
+    public void park(String applicationId, int step) {
+        Application app = applications.findById(applicationId).orElse(null);
+        if (app == null || app.isTerminal()) {
+            return;
+        }
+        ServiceDef service = registry.byStep(step);
+        app.setPendingStep(step);
+        applications.save(app);
+        events.save(new ApplicationEvent(applicationId, step,
+                service == null ? null : service.serviceId(),
+                ApplicationEvent.AWAITING_OPERATOR, null,
+                "demo mode — waiting for an operator to send step " + step
+                        + (service == null ? "" : " to " + service.name())));
+        log.info("Application {} parked before step {} — demo stepping is on", applicationId, step);
+    }
+
+    /**
+     * Let a parked journey go: clear the hold and hand back the step to dispatch. Empty unless
+     * the application is parked and still running.
+     *
+     * <p><b>The clear and the read are one transaction, and both happen before anything is
+     * dispatched.</b> A row left parked forever is also un-sweepable forever — the timeout
+     * deliberately skips parked journeys — whereas a cleared row whose dispatch is then lost
+     * degrades to the ordinary 30-second timeout, which is the failure we already handle.</p>
+     */
+    @Transactional
+    public Optional<Integer> release(String applicationId) {
+        Application app = applications.findById(applicationId).orElse(null);
+        if (app == null || app.isTerminal() || !app.isAwaitingOperator()) {
+            return Optional.empty();
+        }
+        int step = app.getPendingStep();
+        ServiceDef service = registry.byStep(step);
+        app.setPendingStep(null);
+        applications.save(app);
+        events.save(new ApplicationEvent(applicationId, step,
+                service == null ? null : service.serviceId(),
+                ApplicationEvent.RELEASED_BY_OPERATOR, null,
+                "released by an operator — sending step " + step));
+        return Optional.of(step);
+    }
+
+    /** Every journey currently waiting on a click, oldest first. Feeds the release-all path. */
+    @Transactional(readOnly = true)
+    public List<String> parkedApplicationIds() {
+        return applications.findByOverallStatus(Application.IN_PROGRESS).stream()
+                .filter(Application::isAwaitingOperator)
+                .sorted(java.util.Comparator.comparing(Application::getCreatedAt))
+                .map(Application::getId)
+                .toList();
     }
 
     @Transactional
@@ -208,6 +271,13 @@ public class SagaStore {
             return new CallbackOutcome.Ignored("unknown status " + cb.status());
         }
 
+        // Only now, past every guard: a late, duplicate or wrong-step update is recorded in the
+        // log but must not mutate journey state, and an unrecognised word is not an outcome at
+        // all. Note this sits BEFORE the switch, so an IN_PROGRESS report merges too — that is
+        // deliberate, because the one step that legitimately calls back twice (neo-06's
+        // PENDING-then-terminal) may have something to hand on already at the first call.
+        mergeOutputs(app, cb);
+
         return switch (status) {
             case StatusVocabulary.ACCEPTED -> {
                 if (app.getCurrentStep() >= registry.size()) {
@@ -263,6 +333,12 @@ public class SagaStore {
 
         int swept = 0;
         for (Application app : inFlight) {
+            // A parked journey is silent BY DESIGN — nothing has been asked of any service, so
+            // there is nobody to give up on. Without this the demo dies thirty seconds into the
+            // first pause, and it looks exactly like a broken module.
+            if (app.isAwaitingOperator()) {
+                continue;
+            }
             Instant seen = lastSeen.getOrDefault(app.getId(), app.getCreatedAt());
             if (seen != null && seen.isBefore(cutoff)) {
                 String serviceId = lastService.get(app.getId());
@@ -335,6 +411,7 @@ public class SagaStore {
     public Optional<SagaDtos.ApplicationDetail> detail(String id) {
         return applications.findById(id)
                 .map(a -> SagaDtos.ApplicationDetail.of(a, readPayload(a.getPayloadJson()),
+                        readPayload(a.getOutputsJson()),
                         events.findByApplicationIdOrderByIdAsc(id)));
     }
 
@@ -404,8 +481,10 @@ public class SagaStore {
                 case ApplicationEvent.TIMEOUT, ApplicationEvent.DISPATCH_FAILED ->
                         statusByStep.put(e.getStepIndex(), "TIMEOUT");
                 // A PROGRESS_REPORTED row lands here on purpose: the step is still waiting, so
-                // its dot must stay in-flight rather than be overwritten.
-                default -> { /* journey markers and progress reports carry no step status */ }
+                // its dot must stay in-flight rather than be overwritten. AWAITING_OPERATOR and
+                // RELEASED_BY_OPERATOR land here for the opposite reason: they are about a step
+                // that has not been sent yet, which must stay pending.
+                default -> { /* journey markers, progress reports and demo holds carry no status */ }
             }
         }
         List<StepView> steps = registry.ordered().stream()
@@ -414,7 +493,8 @@ public class SagaStore {
                 .toList();
         return new ApplicationRow(app.getId(), app.getApplicantName(), app.getProductCode(),
                 app.getRequestedLimit(), app.getChannel(), app.getCurrentStep(),
-                app.getOverallStatus(), app.getCreatedAt(), app.getUpdatedAt(), steps);
+                app.getPendingStep(), app.getOverallStatus(), app.getCreatedAt(),
+                app.getUpdatedAt(), steps);
     }
 
     /** Requests that went out and have not been answered, per service. */
@@ -477,6 +557,46 @@ public class SagaStore {
                 .orElse(fallback);
     }
 
+    /**
+     * Fold this service's {@code outputs} into the journey's accumulated map (api-contract §3).
+     *
+     * <p><b>Absent means unchanged.</b> A null map writes nothing at all — that is what keeps the
+     * services which never send one completely unaffected by this feature, and it is why an empty
+     * map is treated as a real (if pointless) report rather than as absence. The merge itself is
+     * a plain {@code putAll}: last writer wins, and an explicit null value is stored as a null
+     * rather than deleting the key. Nothing here defends one service's keys from another's —
+     * that is what the ownership table in api-contract §3 is for.</p>
+     *
+     * <p>An oversized document is <b>dropped whole</b>, leaving the previous map intact. Never
+     * truncated: half a JSON document is a parse error served to the next service as if it were
+     * data, which is worse than the absence it would be replacing.</p>
+     */
+    private void mergeOutputs(Application app, ApplicationStatusUpdate cb) {
+        if (cb.outputs() == null) {
+            return;
+        }
+        Map<String, Object> merged = new LinkedHashMap<>(readPayload(app.getOutputsJson()));
+        merged.putAll(cb.outputs());
+        String encoded;
+        try {
+            encoded = json.writeValueAsString(merged);
+        } catch (Exception e) {
+            log.warn("{} sent outputs on {} that will not serialize — keeping the previous map: {}",
+                    cb.serviceId(), app.getId(), e.toString());
+            return;
+        }
+        if (encoded.length() > Application.OUTPUTS_MAX) {
+            log.warn("{} sent outputs on {} that take the accumulated map to {} characters, over "
+                            + "the {} the column holds — the whole update is dropped and the "
+                            + "previous map kept. Report identifiers, not documents.",
+                    cb.serviceId(), app.getId(), encoded.length(), Application.OUTPUTS_MAX);
+            return;
+        }
+        app.setOutputsJson(encoded);
+        applications.save(app);
+        log.info("{} reported outputs {} on {}", cb.serviceId(), cb.outputs().keySet(), app.getId());
+    }
+
     private Map<String, Object> readPayload(String payloadJson) {
         try {
             return payloadJson == null ? Map.of()
@@ -491,6 +611,6 @@ public class SagaStore {
     /** Only used to build the outbound envelope; kept here so the engine stays HTTP-only. */
     public ApplicationRequest toRequest(DispatchTarget target, String command) {
         return new ApplicationRequest(target.applicationId(), target.correlationId(),
-                command, target.application());
+                command, target.application(), target.outputs());
     }
 }

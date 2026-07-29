@@ -69,19 +69,28 @@ export default function JourneyStatus({ applicationId, product, onRestart, onHom
   const status = detail?.overallStatus ?? 'IN_PROGRESS';
   const outcome = OUTCOME[status] ?? OUTCOME.IN_PROGRESS;
   const settled = status !== 'IN_PROGRESS';
+  // Demo stepping is holding this application between steps. Say so: a spinner that never
+  // resolves is how a working system looks broken, and this is the screen an audience watches.
+  const held = detail?.pendingStep != null;
 
   return (
     <Stack gap={5}>
       <PageHeader
         title={
           <>
-            {!settled && <Spinner size="lg" label="Processing" />} {outcome.title}
+            {!settled && !held && <Spinner size="lg" label="Processing" />} {outcome.title}
           </>
         }
-        badge={<Badge tone={journeyTone(status)}>{status}</Badge>}
+        badge={
+          held ? (
+            <Badge tone="warning">WITH AN OPERATOR</Badge>
+          ) : (
+            <Badge tone={journeyTone(status)}>{status}</Badge>
+          )
+        }
         meta={
           <>
-            {outcome.sub}
+            {held ? 'Paused at the bank — someone is releasing each step by hand.' : outcome.sub}
             <br />
             Reference <Tag>{applicationId}</Tag>
             {product && ` · ${product.name}`}

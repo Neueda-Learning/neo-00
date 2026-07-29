@@ -50,4 +50,16 @@ export const api = {
   generator: () => request('/api/v1/generator'),
   setGenerator: (body) =>
     request('/api/v1/generator', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Demo stepping. While it is on, no step leaves the orchestrator until someone
+  // presses Proceed — see the orchestrator's SagaEngine.
+  demoMode: () => request('/api/v1/demo-mode'),
+  setDemoMode: (enabled) =>
+    request('/api/v1/demo-mode', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }),
+  // Send the step a parked journey is waiting on. 409 if it is not parked, which the
+  // request helper surfaces as the orchestrator's own message.
+  proceed: (id) => request(`/api/v1/applications/${id}/proceed`, { method: 'POST' }),
 };

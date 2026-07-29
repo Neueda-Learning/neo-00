@@ -34,6 +34,7 @@ export default function BackofficeScreen({ onHome }) {
   const [summary, setSummary] = useState(null);
   const [services, setServices] = useState([]);
   const [generator, setGenerator] = useState(null);
+  const [demo, setDemo] = useState(null);
   const [error, setError] = useState(null);
   // Which write is in flight, so the button that triggered it can show progress. The
   // API is in ap-southeast-1 and a click is a POST plus a reload round-trip, so
@@ -42,16 +43,18 @@ export default function BackofficeScreen({ onHome }) {
 
   const reload = useCallback(async () => {
     try {
-      const [board, totals, svc, gen] = await Promise.all([
+      const [board, totals, svc, gen, dem] = await Promise.all([
         api.board(),
         api.summary(),
         api.services(),
         api.generator(),
+        api.demoMode(),
       ]);
       setRows(board);
       setSummary(totals);
       setServices(svc);
       setGenerator(gen);
+      setDemo(dem);
       setError(null);
     } catch (e) {
       setError(e.message);
@@ -108,8 +111,35 @@ export default function BackofficeScreen({ onHome }) {
     }
   }
 
+  async function toggleDemo(enabled) {
+    setBusy('demo');
+    try {
+      setDemo(await api.setDemoMode(enabled));
+      await reload();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Send the step one parked application is waiting on. No reload: the board already
+  // polls every second, and a second fetch would only race it.
+  async function proceed(id) {
+    setBusy(`proceed:${id}`);
+    try {
+      await api.proceed(id);
+      await reload();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const up = !error && health?.status === 'UP';
   const running = generator?.enabled ?? false;
+  const stepping = demo?.enabled ?? false;
 
   return (
     <AppShell
@@ -134,6 +164,20 @@ export default function BackofficeScreen({ onHome }) {
                 onInterval={changeInterval}
                 onCreateOne={createOne}
               />
+              <Button
+                variant={stepping ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => toggleDemo(!stepping)}
+                busy={busy === 'demo'}
+                aria-pressed={stepping}
+                title={
+                  stepping
+                    ? 'Every step is waiting for you. Switch off to let the parked journeys run.'
+                    : 'Demo mode: hold each application before every step so you can send it yourself. Turn the generator off first.'
+                }
+              >
+                {stepping ? `Stepping · ${demo?.parked ?? 0} held` : 'Stepping off'}
+              </Button>
               <Button variant="ghost" size="sm" onClick={onHome}>
                 ← Home
               </Button>
@@ -158,7 +202,13 @@ export default function BackofficeScreen({ onHome }) {
       )}
 
       {screen === 'applications' ? (
-        <ApplicationsScreen rows={rows} summary={summary} services={services} />
+        <ApplicationsScreen
+          rows={rows}
+          summary={summary}
+          services={services}
+          busy={busy}
+          onProceed={proceed}
+        />
       ) : (
         <ServicesScreen services={services} />
       )}
@@ -195,8 +245,10 @@ function GeneratorControls({ generator, running, busy, onToggle, onInterval, onC
       >
         + one
       </Button>
+      {/* `secondary`, not `primary`: the design system allows one primary per view, and
+          during a demo that belongs to the Proceed button on the parked row. */}
       <Button
-        variant={running ? 'primary' : 'secondary'}
+        variant="secondary"
         size="sm"
         onClick={() => onToggle(!running)}
         busy={busy === 'toggle'}

@@ -19,6 +19,9 @@ import { api } from '../api.js';
 const COUNTRIES = ['GB', 'IE', 'PL', 'DE', 'FR', 'ES', 'NL'];
 const RESIDENTIAL = ['OWNER', 'MORTGAGE', 'RENTING', 'LIVING_WITH_FAMILY', 'OTHER'];
 const EMPLOYMENT = ['PERMANENT', 'CONTRACT', 'SELF_EMPLOYED', 'STUDENT', 'RETIRED', 'UNEMPLOYED'];
+// Exactly the three api-contract.md §4 allows for identityDocument.type — no more, or a
+// module validating against the enum rejects an application this form produced.
+const DOCUMENT_TYPES = ['PASSPORT', 'DRIVING_LICENCE', 'NATIONAL_ID'];
 
 const readable = (v) => ({ value: v, label: v.replace(/_/g, ' ').toLowerCase() });
 
@@ -35,6 +38,10 @@ const defaults = (product) => ({
   city: 'London',
   postcode: 'SW1A 2AA',
   monthsAtAddress: 24,
+  documentType: 'PASSPORT',
+  documentId: 'ZS1234567',
+  documentIssuingCountry: 'GB',
+  documentExpiryDate: '2031-01-31',
   employmentStatus: 'PERMANENT',
   employerName: 'Acme Ltd',
   monthsInEmployment: 36,
@@ -71,10 +78,10 @@ function toApplication(f, product) {
       dependants: 0,
     },
     identityDocument: {
-      type: 'PASSPORT',
-      documentId: `ZZ${Math.floor(1000000 + Math.random() * 8999999)}`,
-      issuingCountry: f.nationality,
-      expiryDate: '2031-01-31',
+      type: f.documentType,
+      documentId: f.documentId.trim().toUpperCase(),
+      issuingCountry: f.documentIssuingCountry,
+      expiryDate: f.documentExpiryDate,
     },
     employment: {
       status: f.employmentStatus,
@@ -197,6 +204,53 @@ export default function ApplicationForm({ product, onBack, onSubmitted }) {
             </Field>
             <Field label="Postcode">
               {({ id }) => <TextInput id={id} value={f.postcode} onChange={set('postcode')} />}
+            </Field>
+          </FormGrid>
+        </Card>
+
+        <Card title="Identity document">
+          <FormGrid cols={3}>
+            <Field label="Document type" required>
+              {({ id }) => (
+                <Select
+                  id={id}
+                  value={f.documentType}
+                  onChange={set('documentType')}
+                  options={DOCUMENT_TYPES.map(readable)}
+                />
+              )}
+            </Field>
+            <Field label="Document number" required>
+              {({ id }) => (
+                <TextInput
+                  id={id}
+                  value={f.documentId}
+                  onChange={set('documentId')}
+                  required
+                  placeholder="ZS1234567"
+                />
+              )}
+            </Field>
+            <Field label="Issuing country" required>
+              {({ id }) => (
+                <Select
+                  id={id}
+                  value={f.documentIssuingCountry}
+                  onChange={set('documentIssuingCountry')}
+                  options={COUNTRIES}
+                />
+              )}
+            </Field>
+            <Field label="Expiry date" required>
+              {({ id }) => (
+                <TextInput
+                  id={id}
+                  type="date"
+                  value={f.documentExpiryDate}
+                  onChange={set('documentExpiryDate')}
+                  required
+                />
+              )}
             </Field>
           </FormGrid>
         </Card>

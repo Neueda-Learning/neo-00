@@ -103,12 +103,9 @@ Parameters:
   Step8ServiceId:  { Type: String, Default: "" }
   Step8Name:       { Type: String, Default: "" }
   Step8BaseUrl:    { Type: String, Default: "" }
-  Step9ServiceId:  { Type: String, Default: "" }
-  Step9Name:       { Type: String, Default: "" }
-  Step9BaseUrl:    { Type: String, Default: "" }
-  Step10ServiceId: { Type: String, Default: "" }
-  Step10Name:      { Type: String, Default: "" }
-  Step10BaseUrl:   { Type: String, Default: "" }
+  # Eight steps, not ten: neo09 and neo10 are analytical modules and left the sequence on
+  # 2026-07-29. They still deploy and serve their own UIs — the orchestrator just never
+  # dispatches to them. See application.yml.
 
   # --- module-only ---
   ServiceId:
@@ -238,6 +235,10 @@ Resources:
               - { Name: STEP_DELAY, Value: "1s" }
               - { Name: CALLBACK_TIMEOUT, Value: "30s" }
               - { Name: GENERATOR_ENABLED, Value: "false" }
+              # Demo stepping: off at boot, flipped from the backoffice when it is wanted.
+              # Only correct while DesiredCount is 1 — the flag is in memory, so two tasks
+              # would park on one and auto-advance on the other.
+              - { Name: DEMO_STEPPING, Value: "false" }
               # The saga. Spring Boot does NOT merge collections across property sources, so
               # the highest-precedence source that supplies orchestrator.services supplies
               # ALL of it — these thirty variables replace application.yml's list entirely
@@ -275,14 +276,6 @@ Resources:
               - { Name: ORCHESTRATOR_SERVICES_7_SERVICEID, Value: !Ref Step8ServiceId }
               - { Name: ORCHESTRATOR_SERVICES_7_NAME, Value: !Ref Step8Name }
               - { Name: ORCHESTRATOR_SERVICES_7_BASEURL, Value: !Ref Step8BaseUrl }
-              - { Name: ORCHESTRATOR_SERVICES_8_STEP, Value: "9" }
-              - { Name: ORCHESTRATOR_SERVICES_8_SERVICEID, Value: !Ref Step9ServiceId }
-              - { Name: ORCHESTRATOR_SERVICES_8_NAME, Value: !Ref Step9Name }
-              - { Name: ORCHESTRATOR_SERVICES_8_BASEURL, Value: !Ref Step9BaseUrl }
-              - { Name: ORCHESTRATOR_SERVICES_9_STEP, Value: "10" }
-              - { Name: ORCHESTRATOR_SERVICES_9_SERVICEID, Value: !Ref Step10ServiceId }
-              - { Name: ORCHESTRATOR_SERVICES_9_NAME, Value: !Ref Step10Name }
-              - { Name: ORCHESTRATOR_SERVICES_9_BASEURL, Value: !Ref Step10BaseUrl }
               - { Name: CORS_ALLOWED_ORIGIN_PATTERNS, Value: !Sub "http://${AlbDnsName},http://localhost:*" }
             - - { Name: JAVA_TOOL_OPTIONS, Value: "-XX:MaxRAMPercentage=70" }
               - { Name: DB_URL, Value: !Sub "jdbc:mysql://${DbEndpoint}:3306/${DbName}" }

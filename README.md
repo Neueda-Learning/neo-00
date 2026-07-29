@@ -148,9 +148,12 @@ a team pushes ──▶ ghcr.io ──▶ its own OIDC role ──▶ its own st
 
 ## The journey
 
-`backend/src/main/resources/application.yml` declares the sequence — ten steps, with each
+`backend/src/main/resources/application.yml` declares the sequence — **eight** steps, with each
 module's `serviceId`, display name and base URL. That file is the **one** place the journey
-is defined. Everything else only overrides the URLs:
+is defined. `neo-09` (Customer Support) and `neo-10` (Portfolio & Regulatory Analytics) are
+the two analytical modules: they observe the journey rather than sit in it, so they are not
+dispatched to and do not appear on the Services screen — they still run with their own UIs.
+Everything else only overrides the URLs:
 
 * `docker-compose.yml` points them at compose service names (`http://neo-04:8080`);
 * the ECS task definition points them at Cloud Map (`http://neo-04.neobank-dev.local:8080`),
@@ -180,6 +183,31 @@ The toggle in the header starts and stops the orchestrator creating applications
 makes a single one. It starts **stopped** — the orchestrator calls modules that call it
 back, so it must not fire before the stack is up.
 
+## Demo mode: walking one application by hand
+
+A whole journey takes about 25 seconds, which is no time at all to explain it. **Stepping**,
+the second header toggle, holds every application before **every** dispatch — the first
+included — so an eight-step journey is eight clicks. A held row shows
+**▶ Step N · neoNN** where its outcome would be; press it and that step goes out.
+
+Turn the generator **off** first, or every application it creates parks too. Switching
+Stepping back off releases everything currently held, which is the way out if a demo is
+abandoned half-way.
+
+> **The button releases a dispatch — it never answers for a module.** Each service still
+> receives the same envelope, decides for itself and reports its own status. You are slowing
+> the real journey down, not driving it. That distinction is worth saying out loud while
+> demonstrating it: the teams in the room wrote the code that is still doing the deciding.
+
+A held journey is deliberately exempt from the 30-second callback timeout — it is silent
+because nobody was asked, not because a module went quiet. **Stepping off means nothing is
+held:** the toggle lives in memory and comes back off after a restart, while the hold is
+stored, so anything left over is released by the next sweep rather than sitting there
+un-sweepable.
+
+`DEMO_STEPPING=true` sets it at boot; `GET /info` reports it, which is the first thing to
+check when a stack looks stuck.
+
 ## How it works
 
 ```
@@ -189,7 +217,7 @@ dispatch step N → 202 ack → module decides off-thread → PUT status → ste
 - The orchestrator **waits for the status update**, not the `202`. The `202` only means
   *received* — it is an acknowledgement, not an answer.
 - **Only `ACCEPTED` advances.** `REJECTED` and `REFERRED` end the journey where they happen,
-  so a rejection at step 2 means steps 3–10 are never called. A module may say so in its own
+  so a rejection at step 2 means steps 3–8 are never called. A module may say so in its own
   brief's word — `PASSED`, `CLEAR`, `SIGNED`, `OPENED` — which `StatusVocabulary` translates;
   `api-contract.md` §3 has the table. `IN_PROGRESS`/`PENDING` do neither: the journey waits.
 - No answer within `CALLBACK_TIMEOUT` (30s) → the step is logged `TIMEOUT` and the

@@ -1,0 +1,21 @@
+# Demo stepping: the journey parks between services and waits for an operator.
+#
+# pending_step is nullable and carries BOTH facts at once — NULL means "running normally",
+# a number means "parked, and this is the step to dispatch when released". One column rather
+# than a boolean plus a target, which also avoids the BOOLEAN trap: Liquibase renders it as
+# TINYINT on MySQL while Hibernate expects BIT, and ddl-auto=validate then refuses to boot.
+databaseChangeLog:
+  - changeSet:
+      id: 002-add-pending-step
+      author: neo-00
+      changes:
+        - addColumn:
+            tableName: application
+            columns:
+              - column:
+                  name: pending_step
+                  type: INT
+      rollback:
+        - dropColumn:
+            tableName: application
+            columnName: pending_step
