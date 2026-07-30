@@ -10,11 +10,12 @@ export default function LandingScreen({ onChoose }) {
     <AppShell className="landing-shell" nav={<TopNav brand="NEO BANK" product="Platform 00" />}>
       <div className="landing">
         <header className="landing__head">
-          <span className="landing__eyebrow">One journey. Two perspectives.</span>
+          <span className="landing__eyebrow">One journey. Three perspectives.</span>
           <h1 className="landing__title">Enter the bank.</h1>
           <p className="landing__sub">
-            Follow a credit-card application from first choice to final decision—or
-            watch the platform coordinate every check behind it.
+            Follow a credit-card application from first choice to final decision, watch
+            the platform coordinate every check behind it, or send one module a scenario
+            of your own.
           </p>
         </header>
 
