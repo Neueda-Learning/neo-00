@@ -41,7 +41,7 @@ MOCK_PORT     = 8300 + NN     (neo-03 only — the mock identity agency)
 
 | Module | Domain | MySQL | Backend | Sidecar | Frontend | Mock |
 |---|---|---|---|---|---|---|
-| neo-01 | verification | 3401 | **8080** | 9101 | 5171 | — |
+| neo-01 | verification | 3401 | 8201 | 9101 | 5171 | — |
 | neo-02 | policy | 3402 | 8202 | 9102 | 5172 | — |
 | neo-03 | kyc | 3403 | 8203 | 9103 | 5173 | 8303 |
 | neo-04 | screening | 3404 | 8204 | 9104 | 5174 | — |
@@ -56,28 +56,24 @@ MOCK_PORT     = 8300 + NN     (neo-03 only — the mock identity agency)
 `http://sidecar:8080` over the compose network, so changing `SIDECAR_PORT` never affects the
 callback wire — only what you type in a browser.
 
-### Why neo-01's backend is 8080 and not 8201
+### neo-01 once needed 8080 — fixed 2026-07-30
 
-`neo-01/frontend/src/api.js` hardcodes the backend as `<protocol>//<hostname>:8080` whenever the
-page is served from `localhost` (its `LOCAL_BACKEND` constant). No other module does this — the
-other nine use `VITE_API_BASE || ''` and talk same-origin through nginx. neo-01's UI therefore
-only works when its backend really is on 8080, so the scheme bends for the one module that needs
-it. Nothing else wants 8080.
+`neo-01/frontend/src/api.js` used to hardcode the backend as `<protocol>//<hostname>:8080`
+whenever the page was served from `localhost` (a `LOCAL_BACKEND` constant no other module had).
+That is right for a lone module stack and wrong in the system stack, where the UI is on 3001, the
+backend on 9001, and nginx proxies same-origin — so every call went to `localhost:8080`, nothing
+was listening, and the board showed *"Could not load cases · Failed to fetch"*. It never affected
+AWS, where the hostname is the load balancer's; a localhost-only fault.
 
-**The same line breaks the SYSTEM stack's neo-01 UI.** At `http://localhost:3001` the page loads
-but every call goes to `localhost:8080` — where, in the system stack, nothing is listening — and
-the board shows *"Could not load cases · Failed to fetch"*. The backend is fine (`:9001` and the
-nginx proxy both answer 200); only the browser is misrouted. Two ways out:
+The constant is now deleted and neo-01 uses `const BASE = import.meta.env.VITE_API_BASE || ''`
+like the other nine. Same-origin is correct in **both** stacks because each ships an nginx that
+already proxies to the right backend — `neo-01:8080` in the system stack, `backend:8080` in the
+module's own compose. neo-01's backend therefore returns to its 8201 slot and 8080 is free again.
 
-- **Now, no changes:** browse it as **`http://0.0.0.0:3001`**. Any hostname that is not literally
-  `localhost` or `127.0.0.1` skips the heuristic, so the app falls back to same-origin. Verified.
-- **Properly:** team 01 deletes the `LOCAL_BACKEND` constant and uses
-  `const BASE = import.meta.env.VITE_API_BASE || ''` like the other nine. It cannot be fixed from
-  outside their repo — the correct value for the system stack is the empty string, and
-  `VITE_API_BASE` is only consulted when truthy.
-
-It does not affect AWS: there the hostname is the load balancer's, so `LOCAL_BACKEND` is empty
-and the app is same-origin. This is a localhost-only fault.
+⚠️ **The fix is committed in `neo-01` locally but NOT pushed.** Team 01 merges through pull
+requests, so landing it upstream is a PR, not a push to their `main`. Until it lands, anyone
+running neo-01 standalone from a fresh clone still has the old bundle and still needs
+`BACKEND_PORT=8080`.
 
 ## Two of every module are running, and each has its own database
 
