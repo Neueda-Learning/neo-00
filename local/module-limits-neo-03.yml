@@ -1,0 +1,14 @@
+# neo-03 only. Stack it AFTER local/module-limits.yml — neo-03 is the one module with a third
+# container (its mock identity agency), and a service named in an overlay but absent from the
+# base compose is treated as a new, image-less service and fails the whole stack. So the shared
+# overlay cannot mention it.
+#
+#   docker compose -f neo-03/docker-compose.yml \
+#                  -f local/module-limits.yml \
+#                  -f local/module-limits-neo-03.yml \
+#                  -p neo-03 --env-file neo-03/.env up -d
+services:
+  mock-integration:
+    mem_limit: 384m
+    environment:
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70

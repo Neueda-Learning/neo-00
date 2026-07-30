@@ -1,0 +1,41 @@
+# Memory pinning for a module's STANDALONE stack.
+#
+# The system stack (../docker-compose.yml) pins `mem_limit` + `-XX:MaxRAMPercentage=70` on
+# every service, because eleven unpinned JVMs on one laptop each size their heap from the
+# HOST's RAM and take a quarter of it. The module stacks in neo-NN/ pin nothing — fine when a
+# team runs one on its own, fatal when several run beside the system stack: the kernel starts
+# OOM-killing containers, which surfaces as `Exited (137)` on a MySQL and reads like a crash in
+# somebody's code.
+#
+# Measured here (Docker VM = 7.8 GiB): system stack alone ≈ 4.5 GiB across 24 containers. Two
+# unpinned module stacks fit; the third killed three MySQLs in a row. With this overlay the
+# same three stacks fit with room to spare.
+#
+# Use it as a second -f, e.g.
+#
+#   docker compose -f neo-01/docker-compose.yml -f local/module-limits.yml \
+#                  -p neo-01 --env-file neo-01/.env up -d
+#
+# It deliberately names only backend / sidecar / mysql — the three services every module has.
+# Compose treats a service named here but absent from the base file as a NEW service with no
+# image and fails, so neo-03's extra `mock-integration` gets its own overlay file beside this
+# one rather than being listed here.
+#
+# This lives in neo-00 because it is instructor tooling for running other people's stacks; it
+# is not copied into any team repo, and no team repo is edited to use it.
+services:
+  backend:
+    mem_limit: 512m
+    environment:
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70
+
+  sidecar:
+    mem_limit: 448m
+    environment:
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70
+
+  mysql:
+    mem_limit: 384m
+    command:
+      - --innodb-buffer-pool-size=64M
+      - --performance-schema=OFF
