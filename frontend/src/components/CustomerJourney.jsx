@@ -5,8 +5,9 @@ import {
   TopNav,
 } from '../design-system';
 import neoLogo from '../assets/cards/neo-logo.png';
-import platinumCardImage from '../assets/cards/neo-platinum-card.png';
-import premiumCardImage from '../assets/cards/neo-premium-card.png';
+import rewardsCardImage from '../assets/cards/neo-rewards-card.png';
+import standardCardImage from '../assets/cards/neo-standard-card.png';
+import studentCardImage from '../assets/cards/neo-student-card.png';
 import { PRODUCTS } from '../products.js';
 import { money } from '../status.js';
 import ApplicationForm from './ApplicationForm.jsx';
@@ -19,8 +20,9 @@ const STEPS = [
 ];
 
 const CARD_IMAGES = {
-  premium: premiumCardImage,
-  platinum: platinumCardImage,
+  rewards: rewardsCardImage,
+  standard: standardCardImage,
+  student: studentCardImage,
 };
 
 /**
@@ -132,7 +134,7 @@ function ProductStep({ onChoose }) {
             <img
               className="product-option__image"
               src={CARD_IMAGES[p.accent]}
-              alt={`${p.name} in NEO's black and yellow card design`}
+              alt={`${p.name} NEO credit card`}
             />
 
             <header className="product-option__header">
@@ -159,8 +161,8 @@ function ProductStep({ onChoose }) {
                 <dd>{p.apr}%</dd>
               </div>
               <div>
-                <dt>Minimum income</dt>
-                <dd>{money(p.minIncome)}</dd>
+                <dt>Minimum age</dt>
+                <dd>{p.minAge}</dd>
               </div>
             </dl>
 

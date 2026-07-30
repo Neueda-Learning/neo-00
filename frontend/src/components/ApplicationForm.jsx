@@ -7,8 +7,9 @@ import {
   Select,
   TextInput,
 } from '../design-system';
-import platinumCardImage from '../assets/cards/neo-platinum-card.png';
-import premiumCardImage from '../assets/cards/neo-premium-card.png';
+import rewardsCardImage from '../assets/cards/neo-rewards-card.png';
+import standardCardImage from '../assets/cards/neo-standard-card.png';
+import studentCardImage from '../assets/cards/neo-student-card.png';
 import { money } from '../status.js';
 import { api } from '../api.js';
 
@@ -20,8 +21,9 @@ const EMPLOYMENT = ['PERMANENT', 'CONTRACT', 'SELF_EMPLOYED', 'STUDENT', 'RETIRE
 const readable = (v) => ({ value: v, label: v.replace(/_/g, ' ').toLowerCase() });
 const lowerFirst = (value) => value.charAt(0).toLowerCase() + value.slice(1);
 const CARD_IMAGES = {
-  premium: premiumCardImage,
-  platinum: platinumCardImage,
+  rewards: rewardsCardImage,
+  standard: standardCardImage,
+  student: studentCardImage,
 };
 
 // Sensible defaults so an attendee can submit in one click, or tweak anything first.
@@ -37,10 +39,10 @@ const defaults = (product) => ({
   city: 'London',
   postcode: 'SW1A 2AA',
   monthsAtAddress: 24,
-  employmentStatus: 'PERMANENT',
+  employmentStatus: product.defaultEmploymentStatus,
   employerName: 'Acme Ltd',
   monthsInEmployment: 36,
-  annualIncome: Math.max(35000, product.minIncome),
+  annualIncome: 35000,
   monthlyHousingCost: 900,
   existingCreditCommitments: 150,
   requestedCreditLimit: product.defaultLimit,

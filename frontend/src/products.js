@@ -1,18 +1,35 @@
-// The two products the customer journey offers. This is marketing content plus the credit-limit
-// range the application form bounds "requested limit" to. Codes mirror the backend generator
-// (ApplicationFactory), so a submitted application and a generated backoffice fixture speak the
-// same product language — the board renders "PREMIUM" / "PLATINUM" (it strips CREDIT_CARD_).
+// The customer-facing catalogue uses the three product codes fixed by api-contract.md.
+// Limit ranges and the minimum age mirror the latest versioned ProductConfig rows; APR,
+// taglines and benefits are display copy because the shared contract does not define them.
 export const PRODUCTS = [
   {
-    code: 'CREDIT_CARD_PREMIUM',
-    name: 'Premium Card',
-    tagline: 'Everyday rewards, no annual fee',
-    accent: 'premium',
+    code: 'CREDIT_CARD_STANDARD',
+    name: 'Standard Card',
+    tagline: 'Simple, flexible credit for everyday spending',
+    accent: 'standard',
+    apr: 19.9,
+    minAge: 18,
+    minLimit: 250,
+    maxLimit: 5000,
+    defaultLimit: 1500,
+    defaultEmploymentStatus: 'PERMANENT',
+    features: [
+      'No annual fee',
+      'Contactless & mobile wallet',
+      'Real-time spending alerts',
+    ],
+  },
+  {
+    code: 'CREDIT_CARD_REWARDS',
+    name: 'Rewards Card',
+    tagline: 'Earn rewards on everyday spending',
+    accent: 'rewards',
     apr: 24.9,
-    minIncome: 18000,
+    minAge: 18,
     minLimit: 500,
     maxLimit: 10000,
     defaultLimit: 3000,
+    defaultEmploymentStatus: 'PERMANENT',
     features: [
       '1% cashback on everyday spend',
       'No annual fee',
@@ -20,19 +37,20 @@ export const PRODUCTS = [
     ],
   },
   {
-    code: 'CREDIT_CARD_PLATINUM',
-    name: 'Platinum Card',
-    tagline: 'Higher limits and premium perks',
-    accent: 'platinum',
-    apr: 22.9,
-    minIncome: 40000,
-    minLimit: 5000,
-    maxLimit: 25000,
-    defaultLimit: 10000,
+    code: 'CREDIT_CARD_STUDENT',
+    name: 'Student Card',
+    tagline: 'Flexible credit designed for students',
+    accent: 'student',
+    apr: 14.9,
+    minAge: 18,
+    minLimit: 500,
+    maxLimit: 3000,
+    defaultLimit: 1000,
+    defaultEmploymentStatus: 'STUDENT',
     features: [
-      'Airport lounge access',
-      '24/7 travel concierge',
-      'Comprehensive travel insurance',
+      'No annual fee',
+      'Cashback on study essentials',
+      'Budgeting and spending alerts',
     ],
   },
 ];

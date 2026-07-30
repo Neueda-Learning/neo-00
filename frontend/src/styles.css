@@ -227,7 +227,7 @@
 }
 
 .customer-journey--product .ds-shell__main {
-  max-width: 1120px;
+  max-width: 1280px;
   padding-top: 48px;
 }
 
@@ -247,8 +247,8 @@
 
 .product-selection__grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(64px, 8vw, 136px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(30px, 4vw, 56px);
   align-items: start;
 }
 
@@ -591,9 +591,8 @@
   }
 
   .product-selection__grid {
-    grid-template-columns: minmax(0, 520px);
-    justify-content: center;
-    gap: 68px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 52px 38px;
   }
 
   .application-details {
@@ -602,6 +601,12 @@
 }
 
 @media (max-width: 680px) {
+  .product-selection__grid {
+    grid-template-columns: minmax(0, 520px);
+    justify-content: center;
+    gap: 60px;
+  }
+
   .application-form__row {
     grid-template-columns: minmax(0, 1fr);
     gap: 22px;
