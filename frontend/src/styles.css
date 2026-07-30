@@ -1293,6 +1293,63 @@ body {
   line-height: 1;
 }
 
+/* A step that ended badly, given the same weight as --referred above: same hatch, same diamond,
+   same pill. Both mean "the journey stopped here", so the customer should read them the same
+   way — one is red because it is final and the other gold because a person may still rescue it.
+   The pill's glyph differs (a cross, not a bang) so the two are still distinguishable when the
+   colour is not, which is the whole reason the shape carries meaning too. */
+.journey-steps__item--rejected {
+  border-left-color: var(--neo-red);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--neo-red) 7.5%, transparent) 0,
+      color-mix(in srgb, var(--neo-red) 7.5%, transparent) 4px,
+      transparent 4px,
+      transparent 10px
+    );
+}
+
+.journey-steps__item--rejected::before {
+  left: -6px;
+  top: 22px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--neo-red);
+  background: var(--neo-ink);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--neo-red) 10%, transparent);
+  transform: rotate(45deg);
+}
+
+.journey-steps__item--rejected .journey-steps__name {
+  color: var(--neo-red);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.journey-steps__item--rejected .journey-steps__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 3px 7px;
+  border: 1px solid var(--neo-red);
+  background: var(--neo-red);
+  color: var(--neo-ink);
+  font-weight: 700;
+}
+
+.journey-steps__item--rejected .journey-steps__state::before {
+  content: '\00d7';
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid currentColor;
+  font-size: 9px;
+  line-height: 1;
+}
+
 .journey-steps__item > .ds-dot {
   display: none;
 }

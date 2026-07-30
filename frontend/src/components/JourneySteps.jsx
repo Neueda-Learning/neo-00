@@ -1,5 +1,5 @@
 import React from 'react';
-import { StatusDot } from '../design-system';
+import { StatusDot, TONES } from '../design-system';
 import { STEP_IN_FLIGHT, STEP_PENDING, stepTone } from '../status.js';
 
 // What each step's state means to the person waiting, rather than to the bank. The keys are the
@@ -12,6 +12,7 @@ const SAYS = {
   REJECTED: 'Not passed',
   REFERRED: 'Needs a look',
   TIMEOUT: 'No answer',
+  FAILED: 'Not passed',
 };
 
 /**
@@ -33,6 +34,11 @@ export default function JourneySteps({ steps = [], services = [], awaitingSignat
       {steps.map((s) => {
         const waitingOnYou = awaitingSignature && s.status === STEP_IN_FLIGHT;
         const label = waitingOnYou ? 'Waiting for you' : SAYS[s.status] ?? s.status;
+        // Asked of `stepTone` rather than compared against 'REJECTED' by hand, so that every
+        // status status.js already calls negative — REJECTED, TIMEOUT, and a FAILED a module
+        // invents tomorrow — is highlighted, and the one map stays the only thing that decides
+        // what a status means.
+        const stopped = stepTone(s.status) === TONES.NEGATIVE;
         return (
           <li
             key={s.step}
@@ -41,6 +47,7 @@ export default function JourneySteps({ steps = [], services = [], awaitingSignat
               s.status === STEP_IN_FLIGHT && 'journey-steps__item--active',
               s.status === 'ACCEPTED' && 'journey-steps__item--done',
               s.status === 'REFERRED' && 'journey-steps__item--referred',
+              stopped && 'journey-steps__item--rejected',
               s.status === STEP_PENDING && 'journey-steps__item--idle',
             ]
               .filter(Boolean)
