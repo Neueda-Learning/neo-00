@@ -71,17 +71,27 @@ public class GeneratorService {
         }
         lastRun = Instant.now();
         try {
-            createAndStart();
+            // Generated fixtures belong to nobody: they fill the operator's board and
+            // must never appear on a customer's own screen.
+            createAndStart((String) null);
         } catch (Exception e) {
             // A failure here must never kill the scheduled task.
             log.error("Generator tick failed: {}", e.toString());
         }
     }
 
-    /** Create one application from the seeded fixture set and dispatch it to the first service. */
-    public Application createAndStart() {
+    /**
+     * Create one application from the seeded fixture set and dispatch it to the first service.
+     *
+     * <p>{@code customerId} may be null, and is for every fixture the generator makes and for the
+     * backoffice's "+ one" — those belong to nobody and must stay that way, or they would appear
+     * on somebody's own screen. It is a parameter here rather than only on the submitted path so
+     * that "the code names the customer, whatever the body" is one rule with no exception, and so
+     * a customer's history can be seeded without filling the form eight times.</p>
+     */
+    public Application createAndStart(String customerId) {
         String id = nextId();
-        return persistRouteAndStart(id, factory.next(id));
+        return persistRouteAndStart(id, factory.next(id), customerId);
     }
 
     /**
@@ -90,13 +100,17 @@ public class GeneratorService {
      * <p>The orchestrator owns the id and the submission time, so those are stamped here whatever
      * the caller sent; every other field is taken as given. The caller's map is copied, never
      * mutated.</p>
+     *
+     * <p><b>{@code customerId} is deliberately not put into the payload.</b> The payload is the
+     * api-contract §4 application object and is kept exactly as it was sent; who signed in is
+     * this orchestrator's own bookkeeping and goes on the row.</p>
      */
-    public Application createAndStart(Map<String, Object> supplied) {
+    public Application createAndStart(Map<String, Object> supplied, String customerId) {
         String id = nextId();
         Map<String, Object> payload = new LinkedHashMap<>(supplied);
         payload.put("applicationId", id);
         payload.put("submittedAt", Instant.now().toString());
-        return persistRouteAndStart(id, payload);
+        return persistRouteAndStart(id, payload, customerId);
     }
 
     private String nextId() {
@@ -104,7 +118,8 @@ public class GeneratorService {
     }
 
     /** The shared tail: denormalise the board columns, store, route by product, then dispatch. */
-    private Application persistRouteAndStart(String id, Map<String, Object> payload) {
+    private Application persistRouteAndStart(String id, Map<String, Object> payload,
+                                             String customerId) {
         String productCode = nested(payload, "product", "productCode");
         Application application = store.create(new Application(
                 id,
@@ -113,7 +128,8 @@ public class GeneratorService {
                 productCode,
                 intOf(nested(payload, "product", "requestedCreditLimit")),
                 String.valueOf(payload.get("channel")),
-                writeJson(payload)));
+                writeJson(payload),
+                customerId));
         log.info("Created {} for {}", id, application.getApplicantName());
         router.route(productCode, id, payload);
         engine.startJourney(id);

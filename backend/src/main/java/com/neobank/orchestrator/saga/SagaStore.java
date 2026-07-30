@@ -15,11 +15,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,7 +74,8 @@ public class SagaStore {
 
     /** What the engine needs in order to POST one step. */
     public record DispatchTarget(String applicationId, String correlationId, int step,
-                                 Map<String, Object> application) {
+                                 Map<String, Object> application,
+                                 Map<String, Object> outputs) {
     }
 
     private final ApplicationRepository applications;
@@ -80,12 +83,24 @@ public class SagaStore {
     private final ServiceRegistry registry;
     private final ObjectMapper json;
 
+    /**
+     * The one service whose "still working" means "a human is reading something", not "a
+     * computer is thinking". Its wait gets {@link #signatureTimeout} instead of the ordinary
+     * one — see {@link #sweepTimeouts}.
+     */
+    private final String signatureServiceId;
+    private final Duration signatureTimeout;
+
     public SagaStore(ApplicationRepository applications, ApplicationEventRepository events,
-                     ServiceRegistry registry, ObjectMapper json) {
+                     ServiceRegistry registry, ObjectMapper json,
+                     @Value("${orchestrator.signature.service-id:neo06}") String signatureServiceId,
+                     @Value("${orchestrator.signature.timeout:10m}") Duration signatureTimeout) {
         this.applications = applications;
         this.events = events;
         this.registry = registry;
         this.json = json;
+        this.signatureServiceId = signatureServiceId;
+        this.signatureTimeout = signatureTimeout;
     }
 
     // ---- writes ----
@@ -120,7 +135,68 @@ public class SagaStore {
         events.save(new ApplicationEvent(applicationId, step, service.serviceId(),
                 ApplicationEvent.REQUEST_SENT, null, "sent to " + service.name()));
         return Optional.of(new DispatchTarget(applicationId, app.getCorrelationId(), step,
-                readPayload(app.getPayloadJson())));
+                readPayload(app.getPayloadJson()), readPayload(app.getOutputsJson())));
+    }
+
+    /**
+     * Demo stepping: hold the journey here instead of dispatching {@code step}, and say so in
+     * the log. A no-op on an unknown or terminal application — a journey that ended has nothing
+     * left to park.
+     *
+     * <p>The step is <em>stored</em>, not inferred, because {@link #release} has to know what to
+     * dispatch and {@code currentStep} does not answer that before the first dispatch.</p>
+     */
+    @Transactional
+    public void park(String applicationId, int step) {
+        Application app = applications.findById(applicationId).orElse(null);
+        if (app == null || app.isTerminal()) {
+            return;
+        }
+        ServiceDef service = registry.byStep(step);
+        app.setPendingStep(step);
+        applications.save(app);
+        events.save(new ApplicationEvent(applicationId, step,
+                service == null ? null : service.serviceId(),
+                ApplicationEvent.AWAITING_OPERATOR, null,
+                "demo mode — waiting for an operator to send step " + step
+                        + (service == null ? "" : " to " + service.name())));
+        log.info("Application {} parked before step {} — demo stepping is on", applicationId, step);
+    }
+
+    /**
+     * Let a parked journey go: clear the hold and hand back the step to dispatch. Empty unless
+     * the application is parked and still running.
+     *
+     * <p><b>The clear and the read are one transaction, and both happen before anything is
+     * dispatched.</b> A row left parked forever is also un-sweepable forever — the timeout
+     * deliberately skips parked journeys — whereas a cleared row whose dispatch is then lost
+     * degrades to the ordinary 30-second timeout, which is the failure we already handle.</p>
+     */
+    @Transactional
+    public Optional<Integer> release(String applicationId) {
+        Application app = applications.findById(applicationId).orElse(null);
+        if (app == null || app.isTerminal() || !app.isAwaitingOperator()) {
+            return Optional.empty();
+        }
+        int step = app.getPendingStep();
+        ServiceDef service = registry.byStep(step);
+        app.setPendingStep(null);
+        applications.save(app);
+        events.save(new ApplicationEvent(applicationId, step,
+                service == null ? null : service.serviceId(),
+                ApplicationEvent.RELEASED_BY_OPERATOR, null,
+                "released by an operator — sending step " + step));
+        return Optional.of(step);
+    }
+
+    /** Every journey currently waiting on a click, oldest first. Feeds the release-all path. */
+    @Transactional(readOnly = true)
+    public List<String> parkedApplicationIds() {
+        return applications.findByOverallStatus(Application.IN_PROGRESS).stream()
+                .filter(Application::isAwaitingOperator)
+                .sorted(java.util.Comparator.comparing(Application::getCreatedAt))
+                .map(Application::getId)
+                .toList();
     }
 
     @Transactional
@@ -208,6 +284,14 @@ public class SagaStore {
             return new CallbackOutcome.Ignored("unknown status " + cb.status());
         }
 
+        // Only now, past every guard: a late, duplicate or wrong-step update is recorded in the
+        // log but must not mutate journey state, and an unrecognised word is not an outcome at
+        // all. Note this sits BEFORE the switch, so an IN_PROGRESS report merges too — that is
+        // deliberate, because the one step that legitimately calls back twice (neo-06's
+        // PENDING-then-terminal) may have something to hand on already at the first call.
+        mergeOutputs(app, cb);
+        applySignatureHold(app, cb.serviceId(), status, step);
+
         return switch (status) {
             case StatusVocabulary.ACCEPTED -> {
                 if (app.getCurrentStep() >= registry.size()) {
@@ -238,15 +322,59 @@ public class SagaStore {
     }
 
     /**
+     * Start or end a wait on the customer.
+     *
+     * <p>The agreement service is the one step whose "still working" means a person is reading a
+     * contract, and people are slower than the thirty seconds a module is allowed to think. When
+     * it reports progress the journey is marked as waiting on a signature, which only changes
+     * which clock {@link #sweepTimeouts} measures it against; when it reports anything else — the
+     * signature landed, the customer declined, the module's own expiry gave up — the mark comes
+     * off, because the wait is over whichever way it ended.</p>
+     *
+     * <p>Every other service reporting progress is left alone deliberately. A module that is
+     * merely slow should still be given up on at the ordinary timeout; the long rope is for the
+     * one wait that is not the software's fault.</p>
+     */
+    private void applySignatureHold(Application app, String serviceId, String status, int step) {
+        if (!signatureServiceId.equals(serviceId)) {
+            return;
+        }
+        if (StatusVocabulary.IN_PROGRESS.equals(status)) {
+            if (!app.isAwaitingSignature()) {
+                app.setAwaitingSignatureAt(Instant.now());
+                applications.save(app);
+                events.save(new ApplicationEvent(app.getId(), step, serviceId,
+                        ApplicationEvent.AWAITING_SIGNATURE, null,
+                        "waiting for the customer to sign the agreement"));
+                log.info("{} is waiting on the customer's signature — the {} clock now applies",
+                        app.getId(), signatureTimeout);
+            }
+        } else if (app.isAwaitingSignature()) {
+            app.setAwaitingSignatureAt(null);
+            applications.save(app);
+        }
+    }
+
+    /**
      * Fail any in-progress application that has gone quiet for longer than {@code timeout}.
      *
      * <p>Keyed on the last event of <em>any</em> kind rather than on an outstanding request,
      * so it also catches a journey whose scheduled dispatch was lost (a restart, say) and
      * would otherwise sit IN_PROGRESS forever.</p>
+     *
+     * <p><b>A journey waiting on a customer's signature is measured against a longer clock, not
+     * exempted from one.</b> Thirty seconds is how long a module may think; it is an absurd
+     * amount of time to give somebody to read a credit agreement, so that wait would be failed
+     * while the customer was still on the page. But an unbounded exemption would hand back the
+     * exact failure this sweeper exists to prevent — a row sitting IN_PROGRESS for the life of
+     * the database — so it gets {@code orchestrator.signature.timeout} instead. Only the
+     * operator hold is a true skip, because there the journey has asked nothing of anybody.</p>
      */
     @Transactional
     public int sweepTimeouts(Duration timeout) {
-        Instant cutoff = Instant.now().minus(timeout);
+        Instant now = Instant.now();
+        Instant cutoff = now.minus(timeout);
+        Instant signatureCutoff = now.minus(signatureTimeout);
         List<Application> inFlight = applications.findByOverallStatus(Application.IN_PROGRESS);
         if (inFlight.isEmpty()) {
             return 0;
@@ -263,14 +391,27 @@ public class SagaStore {
 
         int swept = 0;
         for (Application app : inFlight) {
+            // A parked journey is silent BY DESIGN — nothing has been asked of any service, so
+            // there is nobody to give up on. Without this the demo dies thirty seconds into the
+            // first pause, and it looks exactly like a broken module.
+            if (app.isAwaitingOperator()) {
+                continue;
+            }
+            boolean signing = app.isAwaitingSignature();
+            Instant deadline = signing ? signatureCutoff : cutoff;
+            Duration allowed = signing ? signatureTimeout : timeout;
             Instant seen = lastSeen.getOrDefault(app.getId(), app.getCreatedAt());
-            if (seen != null && seen.isBefore(cutoff)) {
+            if (seen != null && seen.isBefore(deadline)) {
                 String serviceId = lastService.get(app.getId());
                 events.save(new ApplicationEvent(app.getId(), app.getCurrentStep(), serviceId,
                         ApplicationEvent.TIMEOUT, "TIMEOUT",
-                        "no callback within " + timeout));
-                finish(app, Application.FAILED, "timed out waiting for " + serviceId);
-                log.warn("Application {} timed out waiting for {}", app.getId(), serviceId);
+                        signing ? "the customer did not sign within " + allowed
+                                : "no callback within " + allowed));
+                finish(app, Application.FAILED, signing
+                        ? "the customer did not sign in time"
+                        : "timed out waiting for " + serviceId);
+                log.warn("Application {} timed out {}", app.getId(),
+                        signing ? "waiting for the customer to sign" : "waiting for " + serviceId);
                 swept++;
             }
         }
@@ -333,9 +474,11 @@ public class SagaStore {
 
     @Transactional(readOnly = true)
     public Optional<SagaDtos.ApplicationDetail> detail(String id) {
-        return applications.findById(id)
-                .map(a -> SagaDtos.ApplicationDetail.of(a, readPayload(a.getPayloadJson()),
-                        events.findByApplicationIdOrderByIdAsc(id)));
+        return applications.findById(id).map(a -> {
+            List<ApplicationEvent> log = events.findByApplicationIdOrderByIdAsc(id);
+            return SagaDtos.ApplicationDetail.of(a, readPayload(a.getPayloadJson()),
+                    readPayload(a.getOutputsJson()), stepsOf(log), log);
+        });
     }
 
     @Transactional(readOnly = true)
@@ -394,6 +537,18 @@ public class SagaStore {
      * reached.
      */
     private ApplicationRow toRow(Application app, List<ApplicationEvent> log) {
+        return new ApplicationRow(app.getId(), app.getApplicantName(), app.getProductCode(),
+                app.getRequestedLimit(), app.getChannel(), app.getCurrentStep(),
+                app.getPendingStep(), app.isAwaitingSignature(), app.getOverallStatus(),
+                app.getCreatedAt(), app.getUpdatedAt(), stepsOf(log));
+    }
+
+    /**
+     * One dot per service, derived from the log. Shared by the operator's board and the
+     * customer's own progress rail — extracted rather than written twice so the two surfaces
+     * cannot come to different conclusions about the same journey.
+     */
+    private List<StepView> stepsOf(List<ApplicationEvent> log) {
         Map<Integer, String> statusByStep = new HashMap<>();
         for (ApplicationEvent e : log) {   // ascending id — later events win
             switch (e.getEventType()) {
@@ -404,17 +559,17 @@ public class SagaStore {
                 case ApplicationEvent.TIMEOUT, ApplicationEvent.DISPATCH_FAILED ->
                         statusByStep.put(e.getStepIndex(), "TIMEOUT");
                 // A PROGRESS_REPORTED row lands here on purpose: the step is still waiting, so
-                // its dot must stay in-flight rather than be overwritten.
-                default -> { /* journey markers and progress reports carry no step status */ }
+                // its dot must stay in-flight rather than be overwritten. AWAITING_SIGNATURE is
+                // the same case — the customer is reading, the step is still out. AWAITING_OPERATOR
+                // and RELEASED_BY_OPERATOR land here for the opposite reason: they are about a
+                // step that has not been sent yet, which must stay pending.
+                default -> { /* journey markers, progress reports and holds carry no status */ }
             }
         }
-        List<StepView> steps = registry.ordered().stream()
+        return registry.ordered().stream()
                 .map(s -> new StepView(s.step(), s.serviceId(),
                         statusByStep.getOrDefault(s.step(), StepView.PENDING)))
                 .toList();
-        return new ApplicationRow(app.getId(), app.getApplicantName(), app.getProductCode(),
-                app.getRequestedLimit(), app.getChannel(), app.getCurrentStep(),
-                app.getOverallStatus(), app.getCreatedAt(), app.getUpdatedAt(), steps);
     }
 
     /** Requests that went out and have not been answered, per service. */
@@ -453,6 +608,11 @@ public class SagaStore {
 
     private CallbackOutcome finish(Application app, String status, String why) {
         app.setOverallStatus(status);
+        // Nothing is waiting on a customer once the journey is over — including when the reason
+        // it is over is that they never signed. Belt and braces beside applySignatureHold: the
+        // sweeper and a dispatch failure both end journeys without going through it, and a stale
+        // flag on a finished row would offer a dead Sign button on the customer's screen.
+        app.setAwaitingSignatureAt(null);
         applications.save(app);
         events.save(new ApplicationEvent(app.getId(), app.getCurrentStep(), null,
                 ApplicationEvent.JOURNEY_ENDED, status, why));
@@ -477,6 +637,46 @@ public class SagaStore {
                 .orElse(fallback);
     }
 
+    /**
+     * Fold this service's {@code outputs} into the journey's accumulated map (api-contract §3).
+     *
+     * <p><b>Absent means unchanged.</b> A null map writes nothing at all — that is what keeps the
+     * services which never send one completely unaffected by this feature, and it is why an empty
+     * map is treated as a real (if pointless) report rather than as absence. The merge itself is
+     * a plain {@code putAll}: last writer wins, and an explicit null value is stored as a null
+     * rather than deleting the key. Nothing here defends one service's keys from another's —
+     * that is what the ownership table in api-contract §3 is for.</p>
+     *
+     * <p>An oversized document is <b>dropped whole</b>, leaving the previous map intact. Never
+     * truncated: half a JSON document is a parse error served to the next service as if it were
+     * data, which is worse than the absence it would be replacing.</p>
+     */
+    private void mergeOutputs(Application app, ApplicationStatusUpdate cb) {
+        if (cb.outputs() == null) {
+            return;
+        }
+        Map<String, Object> merged = new LinkedHashMap<>(readPayload(app.getOutputsJson()));
+        merged.putAll(cb.outputs());
+        String encoded;
+        try {
+            encoded = json.writeValueAsString(merged);
+        } catch (Exception e) {
+            log.warn("{} sent outputs on {} that will not serialize — keeping the previous map: {}",
+                    cb.serviceId(), app.getId(), e.toString());
+            return;
+        }
+        if (encoded.length() > Application.OUTPUTS_MAX) {
+            log.warn("{} sent outputs on {} that take the accumulated map to {} characters, over "
+                            + "the {} the column holds — the whole update is dropped and the "
+                            + "previous map kept. Report identifiers, not documents.",
+                    cb.serviceId(), app.getId(), encoded.length(), Application.OUTPUTS_MAX);
+            return;
+        }
+        app.setOutputsJson(encoded);
+        applications.save(app);
+        log.info("{} reported outputs {} on {}", cb.serviceId(), cb.outputs().keySet(), app.getId());
+    }
+
     private Map<String, Object> readPayload(String payloadJson) {
         try {
             return payloadJson == null ? Map.of()
@@ -491,6 +691,6 @@ public class SagaStore {
     /** Only used to build the outbound envelope; kept here so the engine stays HTTP-only. */
     public ApplicationRequest toRequest(DispatchTarget target, String command) {
         return new ApplicationRequest(target.applicationId(), target.correlationId(),
-                command, target.application());
+                command, target.application(), target.outputs());
     }
 }

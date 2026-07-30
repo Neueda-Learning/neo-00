@@ -36,6 +36,46 @@ orchestrator:
   callback-timeout: ${CALLBACK_TIMEOUT:30s}
   sweep-interval-ms: ${SWEEP_INTERVAL_MS:5000}
 
+  # DEMO STEPPING. Off, and normally left off: applications walk the journey by themselves.
+  #
+  # Turned on — here, or from the switch in the backoffice — no step is dispatched until
+  # someone presses Proceed on the board, INCLUDING the first, so an eight-step journey is
+  # eight clicks. It exists so the journey can be narrated in front of an audience.
+  #
+  # The button releases a dispatch; it never answers on a module's behalf. Every service
+  # still does its own work and reports its own status. Turning the toggle back off releases
+  # everything currently parked.
+  demo-stepping: ${DEMO_STEPPING:false}
+
+  # THE ONE STEP THAT WAITS FOR A PERSON. The agreement service generates a credit agreement and
+  # sends it for signature; until the customer signs it there is nothing for it to decide, so it
+  # reports progress rather than an outcome and the journey holds at that step.
+  #
+  # This is NOT a special case in the saga — any service reporting IN_PROGRESS already means "the
+  # journey waits". All this names is whose wait is a customer's, and therefore gets a longer
+  # rope than callback-timeout, which is how long a MODULE may think. The rope is still finite:
+  # an unbounded wait is a journey that sits IN_PROGRESS for the life of the database.
+  #
+  # NOTE the module's own expiry clock is measured in days, so for anything past this timeout the
+  # orchestrator gives up first and the module's case is left PENDING. Ours is the clock that
+  # decides — see api-contract.md §7.
+  signature:
+    service-id: ${SIGNATURE_SERVICE_ID:neo06}
+    timeout: ${SIGNATURE_TIMEOUT:10m}
+
+  # THE SUPPORT DESK. Addressed, not sequenced — neo09 is an analytical module and must NOT be
+  # added to services[] below, or the saga would dispatch to it and wait for a decision it has no
+  # business making. A customer opens a case through the orchestrator because that is the only
+  # door, and this is the only call that goes through it.
+  support:
+    base-url: ${SERVICE_09_URL:http://localhost:9009}
+
+  # WHO OWNS THE PRODUCT CATALOGUE. Not us: the customer's product picker and the "how much
+  # would you like" bound are read live from this service, because it is the one that rejects an
+  # application naming a code or a limit it does not hold. See ProductCatalogue.
+  catalogue:
+    service-id: ${CATALOGUE_SERVICE_ID:neo01}
+
   generator:
     # OFF at boot on purpose: the orchestrator dispatches to services that call back to
     # the orchestrator, so a stack coming up all at once would fire at containers that
@@ -56,10 +96,15 @@ orchestrator:
   # in your IDE and the modules run in compose. In the system stack and on AWS every one of
   # them is overridden by environment (compose service names / Cloud Map DNS).
   #
-  # Steps 9 and 10 are the two ANALYTICAL modules. In the written spec they observe the
-  # journey rather than sit in it; here they are dispatched like every other step, so that
-  # all ten teams exercise the same contract and every module can be proven live. When their
-  # briefs land, they come out of this list and grow a journey read API instead.
+  # EIGHT steps, not ten. neo09 (Customer Support) and neo10 (Portfolio & Regulatory
+  # Analytics) are the two ANALYTICAL modules: in the spec they observe the journey rather
+  # than sit in it, so they were removed from the sequence on 2026-07-29. They still build,
+  # deploy and serve their own UIs — the orchestrator simply never dispatches to them, and
+  # they no longer appear in GET /api/v1/services. Their data comes from the journey read
+  # API instead (api-contract.md §5).
+  #
+  # The journey therefore COMPLETES when step 8 accepts. Nothing in the code counts to ten:
+  # SagaStore uses registry.size(), so this list is the only place the length is decided.
   services:
     - { step: 1,  serviceId: neo01, name: "Application Verification",          base-url: "${SERVICE_01_URL:http://localhost:9001}" }
     - { step: 2,  serviceId: neo02, name: "Customer Policy",                   base-url: "${SERVICE_02_URL:http://localhost:9002}" }
@@ -69,8 +114,6 @@ orchestrator:
     - { step: 6,  serviceId: neo06, name: "Agreement Management",              base-url: "${SERVICE_06_URL:http://localhost:9006}" }
     - { step: 7,  serviceId: neo07, name: "Card Account Setup",                base-url: "${SERVICE_07_URL:http://localhost:9007}" }
     - { step: 8,  serviceId: neo08, name: "Card Issuing",                      base-url: "${SERVICE_08_URL:http://localhost:9008}" }
-    - { step: 9,  serviceId: neo09, name: "Customer Support",                  base-url: "${SERVICE_09_URL:http://localhost:9009}" }
-    - { step: 10, serviceId: neo10, name: "Portfolio & Regulatory Analytics",  base-url: "${SERVICE_10_URL:http://localhost:9010}" }
 
 cors:
   allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*}

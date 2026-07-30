@@ -1,6 +1,9 @@
 package com.neobank.orchestrator.web;
 
+import com.neobank.orchestrator.config.UpstreamModuleException;
+import com.neobank.orchestrator.customer.CustomerService;
 import com.neobank.orchestrator.domain.Application;
+import com.neobank.orchestrator.domain.Customer;
 import com.neobank.orchestrator.generator.GeneratorService;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationDetail;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationStatusUpdate;
@@ -9,8 +12,10 @@ import com.neobank.orchestrator.saga.SagaEngine;
 import com.neobank.orchestrator.saga.SagaStore;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,11 +41,14 @@ public class ApplicationController {
     private final SagaStore store;
     private final GeneratorService generator;
     private final SagaEngine engine;
+    private final CustomerService customers;
 
-    public ApplicationController(SagaStore store, GeneratorService generator, SagaEngine engine) {
+    public ApplicationController(SagaStore store, GeneratorService generator, SagaEngine engine,
+                                CustomerService customers) {
         this.store = store;
         this.generator = generator;
         this.engine = engine;
+        this.customers = customers;
     }
 
     /**
@@ -69,16 +77,47 @@ public class ApplicationController {
      * backoffice "+ one" button and the auto-generator both take this path. With a <b>body</b>,
      * the customer journey's filled-in Application object (api-contract §4 shape) is used as-is;
      * the orchestrator still owns the id and the submission timestamp.</p>
+     *
+     * <h2>{@code ?customerId=AB12}</h2>
+     *
+     * <p>Who is applying, when somebody signed in on the customer surface. <b>A query parameter
+     * and not a field of the body</b>, because the body is the api-contract §4 object that every
+     * module binds into a typed record, and this orchestrator cannot verify from here that all
+     * ten of them tolerate a key they have never seen. It is stored on the row and never written
+     * into the payload.</p>
+     *
+     * <p>The rule has no exception: the parameter names the customer <em>whatever</em> the body,
+     * including on the fixture path, which is how a customer's history can be seeded without
+     * filling the form eight times. Omitted, the application belongs to nobody — which is right
+     * for the generator and for "+ one".</p>
+     *
+     * <p>An <b>unknown code is a {@code 404}</b>, not a silent create: a typo must not orphan an
+     * application that surfaces later when somebody signs in with that code.</p>
      */
     @PostMapping
     public ResponseEntity<ApplicationDetail> create(
-            @RequestBody(required = false) Map<String, Object> application) {
+            @RequestBody(required = false) Map<String, Object> application,
+            @RequestParam(name = "customerId", required = false) String customerId) {
+        String customer = resolveCustomer(customerId);
         Application created = (application == null || application.isEmpty())
-                ? generator.createAndStart()
-                : generator.createAndStart(validated(application));
+                ? generator.createAndStart(customer)
+                : generator.createAndStart(validated(application), customer);
         return ResponseEntity
                 .created(URI.create("/api/v1/applications/" + created.getId()))
                 .body(store.detail(created.getId()).orElseThrow());
+    }
+
+    /** Null stays null; anything else must be a code that has actually been signed in with. */
+    private String resolveCustomer(String customerId) {
+        if (customerId == null || customerId.isBlank()) {
+            return null;
+        }
+        String code = Customer.normalise(customerId);
+        if (!customers.exists(code)) {
+            throw new UpstreamModuleException(HttpStatus.NOT_FOUND,
+                    "no customer " + code + " — sign in before applying");
+        }
+        return code;
     }
 
     /** A submitted application must at least name an applicant and a product. */
@@ -155,5 +194,28 @@ public class ApplicationController {
     @GetMapping("/{id}/journey")
     public ResponseEntity<ApplicationDetail> journey(@PathVariable String id) {
         return ResponseEntity.of(store.detail(id));
+    }
+
+    /**
+     * {@code POST /api/v1/applications/{id}/proceed} — send the step a journey parked by demo
+     * stepping is waiting on. The Proceed button on the board.
+     *
+     * <p><b>This releases a dispatch; it does not answer for a module.</b> The service still
+     * decides and still reports its own status.</p>
+     *
+     * <p><b>409</b>, not 404, when the application is not parked — the id may well exist, it is
+     * the state that is wrong, and saying so is how an operator learns the toggle is off.</p>
+     */
+    @PostMapping("/{id}/proceed")
+    public ResponseEntity<Map<String, Object>> proceed(@PathVariable String id) {
+        return engine.proceed(id)
+                .map(step -> ResponseEntity.ok(Map.<String, Object>of(
+                        "applicationId", id, "dispatchedStep", step)))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                        "timestamp", Instant.now().toString(),
+                        "status", HttpStatus.CONFLICT.value(),
+                        "error", HttpStatus.CONFLICT.getReasonPhrase(),
+                        "message", id + " is not waiting for an operator — it is either already "
+                                + "running, finished, or unknown")));
     }
 }

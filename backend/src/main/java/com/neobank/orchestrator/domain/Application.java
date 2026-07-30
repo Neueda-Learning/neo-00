@@ -54,6 +54,22 @@ public class Application {
     private String channel;
 
     /**
+     * Who applied — the four-character code they signed in with, or {@code null}.
+     *
+     * <p><b>Null is the normal case for a fixture.</b> The generator and the backoffice's "+ one"
+     * create applications nobody typed a code for, and they must stay null: that is exactly what
+     * keeps them filling the operator board while appearing on no customer's own screen.</p>
+     *
+     * <p>Denormalised onto the row rather than read out of {@code payloadJson}, for the same
+     * reason {@code applicantName} is — and deliberately <em>not</em> a field of the api-contract
+     * §4 application object. Every module binds that object into a typed record, and this
+     * orchestrator cannot verify from here that all ten of them tolerate a key they have never
+     * seen. It arrives as a query parameter on the create call instead. See {@link Customer}.</p>
+     */
+    @Column(name = "customer_id", length = 4)
+    private String customerId;
+
+    /**
      * The whole application object as it was sent, ~1.2 KB of JSON.
      *
      * <p>An explicit {@code VARCHAR} rather than {@code @Lob}/{@code TEXT}: H2 and MySQL
@@ -68,6 +84,56 @@ public class Application {
     @Column(name = "current_step", nullable = false)
     private int currentStep;
 
+    /**
+     * Demo stepping: {@code null} means the journey runs itself, a number means it is parked
+     * and this is the step that will be dispatched when an operator releases it.
+     *
+     * <p>One nullable column rather than a boolean plus a target, because the target is not
+     * derivable from {@code currentStep}: parked before the first dispatch it is 1 while
+     * {@code currentStep} is still 0, and parked mid-journey it equals {@code currentStep},
+     * which {@link com.neobank.orchestrator.saga.SagaStore} advances when the callback lands.</p>
+     */
+    @Column(name = "pending_step")
+    private Integer pendingStep;
+
+    /**
+     * The agreement step is waiting for the customer to sign: {@code null} means nobody is being
+     * waited on, a timestamp is when the wait started.
+     *
+     * <p><b>Not the same hold as {@link #pendingStep}, and deliberately a second column.</b> An
+     * operator hold is released by a click and turning demo stepping off releases every one of
+     * them; a customer hold is released by the module reporting what the customer did, and must
+     * survive that. Sharing a column would make "release everything parked" cancel a signature
+     * the customer is still reading.</p>
+     *
+     * <p>The step is not stored because it does not need to be: unlike an operator hold, nothing
+     * here will be dispatched on release. {@code currentStep} still points at the signature
+     * service, which is still the one that will answer.</p>
+     */
+    @Column(name = "awaiting_signature_at")
+    private Instant awaitingSignatureAt;
+
+    /**
+     * What the services have reported so far, accumulated — the journey's own scratchpad.
+     *
+     * <p>Each module may attach an {@code outputs} map to its status update; they are merged
+     * here, last writer wins, and the whole accumulated map rides every later dispatch envelope.
+     * That is how neo-05's approved limit reaches neo-06, neo-07 and neo-08. {@code null} means
+     * nothing has been reported yet, which is not the same as {@code {}}.</p>
+     *
+     * <p>Which module owns which key is fixed in {@code api-contract.md} §3, not decided per
+     * team: a merged map is last-writer-wins, so two modules writing {@code approvedLimit} would
+     * silently overwrite each other and the later step would emboss the wrong number.</p>
+     *
+     * <p>Sized like {@code payloadJson} and for the same reason — an explicit {@code VARCHAR}
+     * both dialects render identically. 2000 characters is ~20× the handful of scalars the
+     * registry allows, and costs 8000 of the 65535 bytes MySQL gives the whole row.</p>
+     */
+    public static final int OUTPUTS_MAX = 2000;
+
+    @Column(name = "outputs_json", length = OUTPUTS_MAX)
+    private String outputsJson;
+
     @Column(name = "overall_status", nullable = false, length = 24)
     private String overallStatus;
 
@@ -81,8 +147,16 @@ public class Application {
         // JPA
     }
 
+    /** An application nobody signed in for — a generated fixture, or the backoffice's "+ one". */
     public Application(String id, String correlationId, String applicantName, String productCode,
                        Integer requestedLimit, String channel, String payloadJson) {
+        this(id, correlationId, applicantName, productCode, requestedLimit, channel, payloadJson,
+                null);
+    }
+
+    public Application(String id, String correlationId, String applicantName, String productCode,
+                       Integer requestedLimit, String channel, String payloadJson,
+                       String customerId) {
         this.id = id;
         this.correlationId = correlationId;
         this.applicantName = applicantName;
@@ -90,6 +164,7 @@ public class Application {
         this.requestedLimit = requestedLimit;
         this.channel = channel;
         this.payloadJson = payloadJson;
+        this.customerId = customerId;
         this.currentStep = 0;
         this.overallStatus = IN_PROGRESS;
     }
@@ -132,6 +207,11 @@ public class Application {
         return channel;
     }
 
+    /** No setter, deliberately: who applied is decided when the application is created. */
+    public String getCustomerId() {
+        return customerId;
+    }
+
     public String getPayloadJson() {
         return payloadJson;
     }
@@ -142,6 +222,43 @@ public class Application {
 
     public void setCurrentStep(int currentStep) {
         this.currentStep = currentStep;
+        this.updatedAt = Instant.now();
+    }
+
+    public Integer getPendingStep() {
+        return pendingStep;
+    }
+
+    public void setPendingStep(Integer pendingStep) {
+        this.pendingStep = pendingStep;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Parked in demo mode, waiting for someone to press Proceed. */
+    public boolean isAwaitingOperator() {
+        return pendingStep != null;
+    }
+
+    public Instant getAwaitingSignatureAt() {
+        return awaitingSignatureAt;
+    }
+
+    public void setAwaitingSignatureAt(Instant awaitingSignatureAt) {
+        this.awaitingSignatureAt = awaitingSignatureAt;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Held at the agreement step, waiting for the customer to sign or decline. */
+    public boolean isAwaitingSignature() {
+        return awaitingSignatureAt != null;
+    }
+
+    public String getOutputsJson() {
+        return outputsJson;
+    }
+
+    public void setOutputsJson(String outputsJson) {
+        this.outputsJson = outputsJson;
         this.updatedAt = Instant.now();
     }
 

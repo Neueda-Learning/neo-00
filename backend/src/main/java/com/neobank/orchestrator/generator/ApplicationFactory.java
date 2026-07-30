@@ -47,10 +47,17 @@ public class ApplicationFactory {
 
     // The customer journey offers exactly these two products, so the generated backoffice
     // fixtures use them too — the whole demo then speaks one product language. The board strips
-    // the CREDIT_CARD_ prefix, rendering "PREMIUM" / "PLATINUM".
+    // the CREDIT_CARD_ prefix, rendering "STANDARD" / "REWARDS".
+    //
+    // THE CODES AND RANGES ARE NEO-01'S, NOT OURS. It owns the product catalogue and rejects
+    // anything outside it (VER_INVALID_FIELD:product.productCode, VER_PRODUCT_INACTIVE, and a
+    // limit outside the range), so a fixture invented here dies at step 1 and demonstrates
+    // nothing downstream — which is exactly what the generator did until 2026-07-29. These are
+    // the ranges of neo-01's CURRENT config version for each code; the live values are served by
+    // GET /api/v1/products, and the customer form reads them from there rather than guessing.
     private static final List<Product> PRODUCTS = List.of(
-            new Product("CREDIT_CARD_PREMIUM", 500, 10000),
-            new Product("CREDIT_CARD_PLATINUM", 5000, 25000));
+            new Product("CREDIT_CARD_STANDARD", 250, 5000),
+            new Product("CREDIT_CARD_REWARDS", 500, 10000));
 
     private final Random random;
 

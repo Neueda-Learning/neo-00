@@ -47,13 +47,18 @@ absent modules simply time out.
 5. **A terminal application never restarts.** `SagaStore.recordApplicationStatusUpdate`
    short-circuits on `isTerminal()`. Removing that lets an answer arriving after the timeout
    sweeper resurrect a dead journey — there is a test for exactly this.
-6. **The journey is configuration, not code.** `application.yml` declares the ten steps —
-   order, `serviceId`, display name — and is the ONE place the sequence is defined.
-   `docker-compose.yml` and the ECS task definition override only the base URLs. Beware:
-   Spring Boot does not merge collections across property sources, so anything supplying
-   `orchestrator.services` supplies **all** of it; that is why `infra/env/*.params` lists all
-   ten slots rather than patching a few. The check is `GET /api/v1/services` returning ten
-   rows.
+6. **The journey is configuration, not code.** `application.yml` declares the **eight** steps —
+   order, `serviceId`, display name — and is the ONE place the sequence is defined. Nothing
+   counts to eight in code: `SagaStore` uses `registry.size()`, so changing that list changes
+   the journey's length. `docker-compose.yml` and the ECS task definition override only the
+   base URLs. Beware: Spring Boot does not merge collections across property sources, so
+   anything supplying `orchestrator.services` supplies **all** of it; that is why
+   `infra/env/*.params` lists every slot rather than patching a few. The check is
+   `GET /api/v1/services` returning eight rows.
+   **`neo09` and `neo10` are deliberately not in it** (2026-07-29): they are the analytical
+   modules and observe the journey rather than sit in it. They still build, deploy and serve
+   their own UIs — the orchestrator simply never dispatches to them, and they do not appear
+   on the Services screen.
 7. **The front end's path prefix is baked at build time.** Vite writes asset URLs into
    index.html when the image is built, and an ALB cannot rewrite paths, so `APP_BASE_PATH`
    is a Docker build argument. It must equal the slot's `PathPrefix` in
@@ -104,7 +109,7 @@ absent modules simply time out.
 ## Tests
 
 ```bash
-cd backend && ./mvnw test                    # 50, H2, no Docker
+cd backend && ./mvnw test                    # 51, H2, no Docker
 cd backend && ./mvnw verify -DskipITs=false  # + 3 real-MySQL (Docker required)
 ```
 

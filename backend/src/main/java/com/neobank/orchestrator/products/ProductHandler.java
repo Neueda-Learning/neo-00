@@ -12,7 +12,7 @@ import java.util.Map;
  */
 public interface ProductHandler {
 
-    /** The product code this handler owns, e.g. {@code CREDIT_CARD_PLATINUM}. */
+    /** The product code this handler owns, e.g. {@code CREDIT_CARD_REWARDS}. */
     String productCode();
 
     /** Called once per application of this product, just before its journey is dispatched. */

@@ -28,6 +28,16 @@ public class ApiExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    /**
+     * A module we were proxying for refused, or could not be reached. The status is the one the
+     * customer should see, which is not always the one the module sent — see
+     * {@link UpstreamModuleException}.
+     */
+    @ExceptionHandler(UpstreamModuleException.class)
+    public ResponseEntity<Map<String, Object>> handleUpstream(UpstreamModuleException ex) {
+        return error(ex.getStatus(), ex.getMessage());
+    }
+
     private ResponseEntity<Map<String, Object>> error(HttpStatus status, String message) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", Instant.now().toString());
