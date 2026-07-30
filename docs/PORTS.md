@@ -79,6 +79,43 @@ nginx proxy both answer 200); only the browser is misrouted. Two ways out:
 It does not affect AWS: there the hostname is the load balancer's, so `LOCAL_BACKEND` is empty
 and the app is same-origin. This is a localhost-only fault.
 
+## Two of every module are running, and each has its own database
+
+This is the one that wastes an afternoon. With both stacks up there are **two neo-01s**, and
+they share nothing — not a schema, not a row:
+
+| | UI | API | Database | Fed by |
+|---|---|---|---|---|
+| **System** neo-01 | 3001 | 9001 | `neo_01` on 3326 | the orchestrator, and **neo-00's simulator** (`:3000` → *Probe a module*) |
+| **Standalone** neo-01 | 5171 | 8080 | its own MySQL on 3401 | **its own sidecar** on 9101 |
+
+neo-00's simulator dispatches to `http://neo-01:8080` — the *system* container, over the system
+compose network. It can never reach a standalone stack. So sending `SIM-01-neo01-7` from the
+simulator and then searching for it at `localhost:5171` correctly finds nothing: right id, wrong
+database.
+
+Tell them apart by the empty state, not the port in the URL bar:
+
+- **"Nothing received yet"** — the fetch worked and the table is genuinely empty. Wrong stack.
+- **"Could not load cases · Failed to fetch"** — the fetch itself failed. That is the
+  `localhost:3001` bug above; use `0.0.0.0:3001`.
+
+To exercise a standalone module, use **its own** sidecar:
+
+```bash
+curl -X POST http://localhost:9101/api/v1/dispatch \
+     -H 'Content-Type: application/json' -d '{"scenarioId":"SIM-01"}'
+```
+
+or open that sidecar's own page at `http://localhost:9101`. Verified end to end: `202`, the
+module decided `PASSED`, and it appears on the 5171 board.
+
+⚠️ **neo-01's empty state says "Send one from the sidecar at `localhost:9000`" and that is now
+wrong.** The module's default `orchestrator-url` assumes the sidecar owns 9000, which was true
+when a team ran one stack alone. Here the neo-00 orchestrator has 9000 and each standalone
+sidecar is on `9100 + NN`. The text is hardcoded in team 01's UI, so it will keep pointing at the
+orchestrator until they change it.
+
 ## Memory is the real limit, not ports
 
 Docker's VM here has **7.8 GiB**, and the system stack alone is ~4.5 GiB across 24 containers.
