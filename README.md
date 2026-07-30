@@ -257,10 +257,11 @@ dispatch step N → 202 ack → module decides off-thread → PUT status → ste
 
 - The orchestrator **waits for the status update**, not the `202`. The `202` only means
   *received* — it is an acknowledgement, not an answer.
-- **Only `ACCEPTED` advances.** `REJECTED` and `REFERRED` end the journey where they happen,
-  so a rejection at step 2 means steps 3–8 are never called. A module may say so in its own
-  brief's word — `PASSED`, `CLEAR`, `SIGNED`, `OPENED` — which `StatusVocabulary` translates;
-  `api-contract.md` §3 has the table. `IN_PROGRESS`/`PENDING` do neither: the journey waits.
+- **Only `ACCEPTED` advances.** `REJECTED` ends the journey. `REFERRED` stops it for human
+  review; the same current service may later report `ACCEPTED` to resume or `REJECTED` to close.
+  A module may use its own brief's word — `PASSED`, `CLEAR`, `SIGNED`, `OPENED` — which
+  `StatusVocabulary` translates; `api-contract.md` §3 has the table.
+  `IN_PROGRESS`/`PENDING` do neither: the journey waits.
 - No answer within `CALLBACK_TIMEOUT` (30s) → the step is logged `TIMEOUT` and the
   application ends `FAILED`. An answer arriving after that is recorded but cannot restart
   the journey.
@@ -309,9 +310,12 @@ free to diverge.
 **The mock orchestrator is not in here.** It lives in its own repo,
 [`Neueda-Learning/neobank-sidecar`](https://github.com/Neueda-Learning/neobank-sidecar), which each module
 repo builds directly as a Docker build context — so there is exactly one copy of it in the
-world and no team maintains it. (The submodules below are HTTPS, so a git build context
-*could* now reach them; the sidecar stays separate for the reason it left in the first place,
-which is that scaffolding does not belong inside a graded deliverable.)
+world and no team maintains it. It is the orchestrator a team can run offline before its module is
+deployed. The simulator in neo-00 is different: it is instructor tooling inside the real,
+instructor-owned, ungraded platform, and sends the same frozen corpus to a configured deployed
+module while owning the callback id itself. The corpus is intentionally duplicated here as the
+canonical copy and in the sidecar as the frozen `v1` snapshot. Scaffolding still does not belong
+inside a team's graded module repo; neither tool does.
 
 ## Develop
 

@@ -74,10 +74,11 @@ export default function LoginScreen({ onSignedIn, onHome }) {
 
   return (
     <AppShell
+      className="customer-shell login-shell"
       nav={
         <TopNav
-          brand="NEO"
-          product="Sign in"
+          brand="NEO BANK"
+          product="Customer access"
           actions={
             <Button variant="ghost" size="sm" onClick={onHome}>
               ← Home

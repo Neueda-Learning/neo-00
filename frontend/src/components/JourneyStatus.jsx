@@ -11,10 +11,9 @@ import {
   Spinner,
   Stack,
   Tag,
-  Timeline,
 } from '../design-system';
 import { api } from '../api.js';
-import { clock, eventTone, journeyTone, money, stepTone } from '../status.js';
+import { journeyTone, money } from '../status.js';
 import JourneySteps from './JourneySteps.jsx';
 import SignAgreement from './SignAgreement.jsx';
 import SupportTicketForm from './SupportTicketForm.jsx';
@@ -52,6 +51,10 @@ export default function JourneyStatus({ applicationId, product, kind, onRestart,
 
   const status = detail?.overallStatus ?? 'IN_PROGRESS';
   const settled = status !== 'IN_PROGRESS';
+  // A referral pauses the automated journey, but it is not immutable: the owning service can
+  // clear or reject it after human review. Keep watching so the customer sees that resolution
+  // without reloading the page. Completed, rejected and failed journeys cannot move again.
+  const final = status === 'COMPLETED' || status === 'REJECTED' || status === 'FAILED';
 
   // The names down the left belong to the journey, not to this page — they are configuration,
   // and a step renamed or reordered must not need a front-end change. Fetched once: they do not
@@ -72,9 +75,9 @@ export default function JourneyStatus({ applicationId, product, kind, onRestart,
   }, []);
 
   useEffect(() => {
-    // STOP once the journey is over. There is a form on this screen when it completes, and a
-    // poll that keeps running would call setDetail under the customer's typing every second.
-    if (settled) return undefined;
+    // STOP only once the journey is irreversibly over. REFERRED remains live because a reviewer
+    // can resolve it and resume the flow; the page must reflect that without a manual refresh.
+    if (final) return undefined;
 
     let live = true;
     async function load() {
@@ -94,7 +97,7 @@ export default function JourneyStatus({ applicationId, product, kind, onRestart,
       live = false;
       clearInterval(id);
     };
-  }, [applicationId, settled]);
+  }, [applicationId, final]);
 
   const outcome = OUTCOME[status] ?? OUTCOME.IN_PROGRESS;
   // Demo stepping is holding this application between steps. Say so: a spinner that never
@@ -174,30 +177,6 @@ export default function JourneyStatus({ applicationId, product, kind, onRestart,
               seconds and where the only honest answer is "it is being checked". */}
           {(signing || settled) && <SupportTicketForm applicationId={applicationId} />}
 
-          <Card title="What is happening" subtitle={settled ? 'complete' : 'updated every second'}>
-            {!detail && !error && <EmptyState flush title="Loading…" />}
-            {detail && detail.events.length === 0 && (
-              <EmptyState flush title="Waiting for the first update…" />
-            )}
-            {detail && detail.events.length > 0 && (
-              <Timeline
-                items={detail.events.map((e) => ({
-                  id: e.id,
-                  tone: eventTone(e),
-                  title: (
-                    <>
-                      <Tag>{e.stepIndex > 0 ? `step ${e.stepIndex}` : '—'}</Tag>
-                      <span>{e.eventType}</span>
-                      {e.serviceId && <Tag>{e.serviceId}</Tag>}
-                      {e.status && <Badge tone={stepTone(e.status)}>{e.status}</Badge>}
-                    </>
-                  ),
-                  detail: e.comment,
-                  when: clock(e.createdAt),
-                }))}
-              />
-            )}
-          </Card>
         </Stack>
       </div>
 
@@ -225,6 +204,47 @@ export default function JourneyStatus({ applicationId, product, kind, onRestart,
 function YourCard({ detail, applicationId }) {
   const outputs = detail.outputs ?? {};
   const settling = detail.overallStatus === 'IN_PROGRESS';
+  const [moduleDetails, setModuleDetails] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    let attempts = 0;
+    let retryId;
+
+    async function loadDetails() {
+      attempts += 1;
+      try {
+        const details = await api.productDetails(applicationId);
+        if (!live) return;
+
+        setModuleDetails((current) => mergePresent(current, details));
+
+        // Module callbacks and their own read models are separate commits. A journey can reach
+        // COMPLETED a fraction before every read endpoint exposes its row, so keep checking for
+        // a short, bounded window instead of turning the first 404/empty response into a
+        // permanent blank card.
+        if (!hasAllProductDetails(details) && attempts < 15) {
+          retryId = window.setTimeout(loadDetails, 2000);
+        }
+      } catch {
+        if (!live) return;
+        setModuleDetails((current) => current ?? {});
+        if (attempts < 15) retryId = window.setTimeout(loadDetails, 2000);
+      }
+    }
+
+    loadDetails();
+    return () => {
+      live = false;
+      window.clearTimeout(retryId);
+    };
+  }, [applicationId]);
+
+  // Saga outputs win as teams adopt the optional outputs callback. The read adapter fills the
+  // same customer-safe fields for older modules. Null placeholders must not erase a real value
+  // recovered from a module's read model.
+  const facts = mergePresent(moduleDetails, outputs);
+  const loadingFacts = moduleDetails == null && Object.keys(outputs).length === 0;
 
   return (
     <Card
@@ -245,12 +265,37 @@ function YourCard({ detail, applicationId }) {
           ['Product', detail.productCode?.replace('CREDIT_CARD_', '') ?? '—'],
           // The limit GRANTED, never the one asked for — they are different numbers and this is
           // the one that matters.
-          ['Credit limit', money(outputs.approvedLimit) ?? 'being confirmed'],
-          ['APR', outputs.apr == null ? '—' : `${outputs.apr}%`],
-          ['Account number', outputs.accountId ?? 'being set up'],
-          ['Card number', outputs.panLast4 ? `•••• ${outputs.panLast4}` : 'issued, number to follow'],
+          ['Credit limit', money(facts.approvedLimit) ?? (loadingFacts ? 'loading…' : 'not supplied')],
+          ['APR', facts.apr == null ? (loadingFacts ? 'loading…' : 'not supplied') : `${facts.apr}%`],
+          ['Account number', facts.accountId ?? (loadingFacts ? 'loading…' : 'not supplied')],
+          [
+            'Card number',
+            facts.panLast4
+              ? `•••• ${facts.panLast4}`
+              : loadingFacts
+                ? 'loading…'
+                : 'awaiting card issuer',
+          ],
         ]}
       />
     </Card>
+  );
+}
+
+function mergePresent(...sources) {
+  return sources.reduce((merged, source) => {
+    Object.entries(source ?? {}).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') merged[key] = value;
+    });
+    return merged;
+  }, {});
+}
+
+function hasAllProductDetails(details) {
+  return (
+    details?.approvedLimit != null &&
+    details?.apr != null &&
+    Boolean(details?.accountId) &&
+    Boolean(details?.panLast4)
   );
 }

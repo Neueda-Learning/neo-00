@@ -1,0 +1,108 @@
+/* Neo-00's standalone brand direction: Minted Geometry.
+ * Deliberately local to this frontend. Module copies of the design system are untouched. */
+:root {
+  --neo-ink: #0f1115;
+  --neo-ink-raised: #161a21;
+  --neo-ink-soft: #1d222c;
+  --neo-gold: #ffc53d;
+  --neo-gold-hover: #ffd364;
+  --neo-paper: #f7f5ef;
+  --neo-white: #ffffff;
+  --neo-muted: #969ca8;
+  --neo-line: #2a303b;
+  --neo-red: #ff5b57;
+  --neo-blue: #7aa8ff;
+
+  --ds-font-sans: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ds-font-display: var(--ds-font-sans);
+  --ds-display-weight: 600;
+  --ds-figure-family: var(--ds-font-sans);
+  --ds-figure-weight: 300;
+
+  --ds-ground-fallback: var(--neo-ink);
+  --ds-ground-image: none;
+  --ds-ground-grain: none;
+  --ds-color-canvas: var(--neo-ink);
+  --ds-color-surface: var(--neo-ink-raised);
+  --ds-color-surface-sunken: #11141a;
+  --ds-color-surface-hover: #202630;
+  --ds-color-surface-active: #292f39;
+  --ds-surface-fill: var(--neo-ink-raised);
+  --ds-surface-backdrop: none;
+  --ds-surface-border: 1px solid var(--neo-line);
+  --ds-surface-shadow: none;
+  --ds-control-fill: #11141a;
+  --ds-control-fill-hover: #171b22;
+
+  --ds-color-nav: rgba(15, 17, 21, 0.96);
+  --ds-color-ink-solid: var(--neo-ink);
+  --ds-color-nav-ink: var(--neo-white);
+  --ds-color-nav-ink-muted: var(--neo-muted);
+  --ds-color-nav-hover: var(--neo-ink-soft);
+
+  --ds-color-border: #343a45;
+  --ds-color-border-subtle: #252a33;
+  --ds-color-border-strong: #626975;
+  --ds-color-text: var(--neo-white);
+  --ds-color-text-secondary: #c7cbd2;
+  --ds-color-text-muted: var(--neo-muted);
+  --ds-color-text-inverse: var(--neo-ink);
+
+  --ds-color-accent: var(--neo-gold);
+  --ds-color-accent-hover: var(--neo-gold-hover);
+  --ds-color-accent-press: #eeb127;
+  --ds-color-accent-soft: rgba(255, 197, 61, 0.13);
+  --ds-color-accent-ink: var(--neo-ink);
+  --ds-color-accent-text: var(--neo-gold);
+  --ds-color-focus: var(--neo-gold);
+
+  --ds-tone-positive-surface: #18372c;
+  --ds-tone-positive-border: #27684f;
+  --ds-tone-positive-text: #9df3ca;
+  --ds-tone-positive-ink: #7ee8b6;
+  --ds-tone-positive-accent: #49d89b;
+  --ds-tone-warning-surface: #352e1b;
+  --ds-tone-warning-border: #6f5922;
+  --ds-tone-warning-text: #ffe08d;
+  --ds-tone-warning-ink: var(--neo-gold);
+  --ds-tone-warning-accent: var(--neo-gold);
+  --ds-tone-negative-surface: #3a2022;
+  --ds-tone-negative-border: #74363a;
+  --ds-tone-negative-text: #ffb5b2;
+  --ds-tone-negative-ink: #ff817d;
+  --ds-tone-negative-accent: var(--neo-red);
+  --ds-tone-info-surface: #1c2d45;
+  --ds-tone-info-border: #315582;
+  --ds-tone-info-text: #b5d0ff;
+  --ds-tone-info-ink: #9abbff;
+  --ds-tone-info-accent: var(--neo-blue);
+  --ds-tone-neutral-surface: #20242c;
+  --ds-tone-neutral-border: #3a414d;
+  --ds-tone-neutral-text: #c3c7cf;
+  --ds-tone-neutral-ink: #a9afb9;
+  --ds-tone-neutral-accent: #737b88;
+
+  --ds-series-1: #49d89b;
+  --ds-series-2: var(--neo-blue);
+  --ds-series-3: var(--neo-gold);
+  --ds-series-4: var(--neo-red);
+  --ds-series-5: #737b88;
+  --ds-series-track: #252a33;
+
+  --ds-shadow-sm: none;
+  --ds-shadow-md: none;
+  --ds-shadow-overlay: 0 24px 80px rgba(0, 0, 0, 0.55);
+  --ds-scrim: rgba(0, 0, 0, 0.72);
+
+  --ds-radius-sm: 2px;
+  --ds-radius-md: 3px;
+  --ds-radius-lg: 4px;
+  --ds-radius-xl: 12px;
+  --ds-page-width: 1360px;
+  --ds-page-pad-x: clamp(20px, 4vw, 64px);
+  --ds-page-pad-y: clamp(28px, 5vw, 72px);
+  --ds-nav-height: 76px;
+  --ds-text-3xl: clamp(40px, 6vw, 78px);
+  --ds-text-2xl: clamp(28px, 3vw, 42px);
+  --ds-text-xl: 20px;
+}

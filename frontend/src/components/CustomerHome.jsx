@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Badge,
   Button,
@@ -10,6 +10,7 @@ import {
   Stack,
   Tag,
 } from '../design-system';
+import { api } from '../api.js';
 import { productByCode } from '../products.js';
 import { journeyTone, money, time } from '../status.js';
 
@@ -89,6 +90,42 @@ function ProductCard({ item, onOpen }) {
   const product = productByCode(item.productCode);
   const outputs = item.outputs ?? {};
   const settling = item.overallStatus === 'IN_PROGRESS';
+  const [moduleDetails, setModuleDetails] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    let attempts = 0;
+    let retryId;
+
+    async function loadDetails() {
+      attempts += 1;
+      try {
+        const details = await api.productDetails(item.applicationId);
+        if (!live) return;
+        setModuleDetails((current) => mergePresent(current, details));
+
+        // The dashboard used to read only the saga callback outputs. Most modules still send
+        // the original three-field callback, so their customer-safe facts live behind their
+        // case APIs and can arrive just after the product appears here.
+        if (!hasAllProductDetails(details) && attempts < 15) {
+          retryId = window.setTimeout(loadDetails, 2000);
+        }
+      } catch {
+        if (!live) return;
+        setModuleDetails((current) => current ?? {});
+        if (attempts < 15) retryId = window.setTimeout(loadDetails, 2000);
+      }
+    }
+
+    loadDetails();
+    return () => {
+      live = false;
+      window.clearTimeout(retryId);
+    };
+  }, [item.applicationId]);
+
+  const facts = mergePresent(moduleDetails, outputs);
+  const loadingFacts = moduleDetails == null && Object.keys(outputs).length === 0;
 
   return (
     <Card
@@ -105,15 +142,48 @@ function ProductCard({ item, onOpen }) {
         items={[
           // Each of these comes from a different module and any of them may not have reported
           // yet, so each has its own absent-state rather than one shared "not ready".
-          ['Credit limit', money(outputs.approvedLimit) ?? 'being confirmed'],
-          ['Account number', outputs.accountId ?? 'being set up'],
-          // panLast4 is neo-08's to report and that module has not implemented it yet, so this
-          // reads as pending rather than missing — and lights up the day it does.
-          ['Card number', outputs.panLast4 ? `•••• ${outputs.panLast4}` : 'issued, number to follow'],
+          [
+            'Credit limit',
+            money(facts.approvedLimit) ?? (loadingFacts ? 'loading…' : 'not supplied'),
+          ],
+          [
+            'APR',
+            facts.apr == null ? (loadingFacts ? 'loading…' : 'not supplied') : `${facts.apr}%`,
+          ],
+          [
+            'Account number',
+            facts.accountId ?? (loadingFacts ? 'loading…' : 'not supplied'),
+          ],
+          [
+            'Card number',
+            facts.panLast4
+              ? `•••• ${facts.panLast4}`
+              : loadingFacts
+                ? 'loading…'
+                : 'awaiting card issuer',
+          ],
           ['Opened', time(item.createdAt)],
         ]}
       />
     </Card>
+  );
+}
+
+function mergePresent(...sources) {
+  return sources.reduce((merged, source) => {
+    Object.entries(source ?? {}).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') merged[key] = value;
+    });
+    return merged;
+  }, {});
+}
+
+function hasAllProductDetails(details) {
+  return (
+    details?.approvedLimit != null &&
+    details?.apr != null &&
+    Boolean(details?.accountId) &&
+    Boolean(details?.panLast4)
   );
 }
 

@@ -178,7 +178,13 @@ public class Application {
         updatedAt = now;
     }
 
-    /** True once the journey can no longer move — nothing may restart it. */
+    /**
+     * True when ordinary dispatch and callbacks must stop.
+     *
+     * <p>A referral is terminal for automatic processing, but the saga store may explicitly
+     * resolve it when the same service later reports the analyst's final decision. Failed,
+     * rejected and completed journeys remain irreversible.</p>
+     */
     public boolean isTerminal() {
         return !IN_PROGRESS.equals(overallStatus);
     }

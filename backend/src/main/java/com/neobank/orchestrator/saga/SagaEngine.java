@@ -5,6 +5,7 @@ import com.neobank.orchestrator.saga.SagaDtos.ApplicationStatusUpdate;
 import com.neobank.orchestrator.saga.SagaStore.CallbackOutcome;
 import com.neobank.orchestrator.saga.SagaStore.DispatchTarget;
 import com.neobank.orchestrator.saga.ServiceRegistry.ServiceDef;
+import com.neobank.orchestrator.simulator.SimulationService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -32,9 +33,10 @@ import org.springframework.web.client.RestClient;
  *
  * <p>Only a status that resolves to {@code ACCEPTED} advances — each module may say so in its own
  * word ({@code PASSED}, {@code CLEAR}, {@code SIGNED}, {@code OPENED}…), which
- * {@link StatusVocabulary} translates. {@code REJECTED} and {@code REFERRED} end the journey where
- * they happen, so the remaining steps are never dispatched. {@code IN_PROGRESS} does neither: the
- * journey keeps waiting.</p>
+ * {@link StatusVocabulary} translates. {@code REJECTED} ends the journey. {@code REFERRED} stops
+ * automatic processing for human review; the same service may later resolve it with
+ * {@code ACCEPTED} or {@code REJECTED}. {@code IN_PROGRESS} does neither: the journey keeps
+ * waiting.</p>
  *
  * <h2>Demo stepping</h2>
  *
@@ -58,6 +60,7 @@ public class SagaEngine {
     private final TaskScheduler scheduler;
     private final Duration stepDelay;
     private final String command;
+    private final SimulationService simulations;
 
     /**
      * In memory on purpose, exactly like {@link com.neobank.orchestrator.generator.GeneratorService}
@@ -74,6 +77,7 @@ public class SagaEngine {
                       ServiceRegistry registry,
                       RestClient restClient,
                       TaskScheduler scheduler,
+                      SimulationService simulations,
                       @Value("${orchestrator.step-delay:1s}") Duration stepDelay,
                       @Value("${orchestrator.command:process-application}") String command,
                       @Value("${orchestrator.demo-stepping:false}") boolean demoSteppingAtBoot) {
@@ -81,6 +85,7 @@ public class SagaEngine {
         this.registry = registry;
         this.restClient = restClient;
         this.scheduler = scheduler;
+        this.simulations = simulations;
         this.stepDelay = stepDelay;
         this.command = command;
         this.demoStepping = new AtomicBoolean(demoSteppingAtBoot);
@@ -101,12 +106,16 @@ public class SagaEngine {
      * <p>The application id arrives as a parameter rather than on the body: it comes from the URL of
      * the {@code PUT} that carried the update.</p>
      *
-     * <p>{@code Advance} is the only outcome with anything left to do here. {@code Finished},
-     * {@code Waiting} and {@code Ignored} are all deliberate no-ops — the store has already
-     * recorded them, and none of the three has a next step to send.</p>
+     * <p>{@code Advance} schedules the next journey step. {@code Unknown} falls through to the
+     * simulator, which may own the id without ever writing a saga event. {@code Finished},
+     * {@code Waiting} and {@code Ignored} are deliberate no-ops.</p>
      */
     public void handleApplicationStatusUpdate(String applicationId, ApplicationStatusUpdate update) {
         CallbackOutcome outcome = store.recordApplicationStatusUpdate(applicationId, update);
+        if (outcome instanceof CallbackOutcome.Unknown) {
+            simulations.report(applicationId, update);
+            return;
+        }
         if (outcome instanceof CallbackOutcome.Advance advance) {
             if (demoStepping.get()) {
                 // Only Advance parks, and only a canonical ACCEPTED produces an Advance — so a

@@ -87,6 +87,7 @@ export const api = {
 
   // The agreement's terms and whether it is this customer's to sign yet.
   agreement: (id) => request(`/api/v1/applications/${id}/agreement`),
+  productDetails: (id) => request(`/api/v1/applications/${id}/product-details`),
   // A URL rather than a fetch: the PDF is for an <iframe> to load, not for us to hold in memory.
   agreementDocumentUrl: (id) => `${BASE}/api/v1/applications/${id}/agreement/document`,
   // Neither of these advances the journey. They report a fact to the module that owns the
@@ -105,4 +106,21 @@ export const api = {
   // The case this customer already has, so the page can keep it open and show what the bank has
   // said back. `null` (a 204) means they have none and should be offered the form.
   supportCase: (id) => request(`/api/v1/applications/${id}/support-case`),
+
+  // Instructor simulator. These calls go through the orchestrator because it owns the generated
+  // application id and can therefore pair the module's ordinary callback without polluting the
+  // journey board. Targets are configured server-side; the browser never supplies a URL.
+  scenarios: () => request('/api/v1/simulator/scenarios'),
+  targets: () => request('/api/v1/simulator/targets'),
+  dispatch: (body) =>
+    request('/api/v1/simulator/dispatch', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  dispatches: (target) =>
+    request('/api/v1/simulator/dispatches' + (target ? `?target=${encodeURIComponent(target)}` : '')),
+  clearDispatches: (target) =>
+    request(`/api/v1/simulator/dispatches?target=${encodeURIComponent(target)}`, {
+      method: 'DELETE',
+    }),
 };

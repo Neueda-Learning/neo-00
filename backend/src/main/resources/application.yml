@@ -76,6 +76,23 @@ orchestrator:
   catalogue:
     service-id: ${CATALOGUE_SERVICE_ID:neo01}
 
+  # INSTRUCTOR SIMULATOR. Addressed independently from the eight-step journey: a one-shot POST
+  # checks one chosen module and its callback is stored in simulation, never application_event.
+  # All ten targets are explicit so this endpoint can never become a fetch-arbitrary-URL proxy.
+  simulator:
+    enabled: ${SIMULATOR_ENABLED:true}
+    targets:
+      - { serviceId: neo01, name: "Application Verification",           base-url: "${SERVICE_01_URL:http://localhost:9001}" }
+      - { serviceId: neo02, name: "Customer Policy",                    base-url: "${SERVICE_02_URL:http://localhost:9002}" }
+      - { serviceId: neo03, name: "Identity Verification (KYC)",        base-url: "${SERVICE_03_URL:http://localhost:9003}" }
+      - { serviceId: neo04, name: "Fraud & AML Screening",              base-url: "${SERVICE_04_URL:http://localhost:9004}" }
+      - { serviceId: neo05, name: "Credit Decisioning",                 base-url: "${SERVICE_05_URL:http://localhost:9005}" }
+      - { serviceId: neo06, name: "Agreement Management",               base-url: "${SERVICE_06_URL:http://localhost:9006}" }
+      - { serviceId: neo07, name: "Card Account Setup",                 base-url: "${SERVICE_07_URL:http://localhost:9007}" }
+      - { serviceId: neo08, name: "Card Issuing",                       base-url: "${SERVICE_08_URL:http://localhost:9008}" }
+      - { serviceId: neo09, name: "Customer Support",                   base-url: "${SERVICE_09_URL:http://localhost:9009}", analytical: true }
+      - { serviceId: neo10, name: "Portfolio & Regulatory Analytics",  base-url: "${SERVICE_10_URL:http://localhost:9010}", analytical: true }
+
   generator:
     # OFF at boot on purpose: the orchestrator dispatches to services that call back to
     # the orchestrator, so a stack coming up all at once would fire at containers that
@@ -100,8 +117,8 @@ orchestrator:
   # Analytics) are the two ANALYTICAL modules: in the spec they observe the journey rather
   # than sit in it, so they were removed from the sequence on 2026-07-29. They still build,
   # deploy and serve their own UIs — the orchestrator simply never dispatches to them, and
-  # they no longer appear in GET /api/v1/services. Their data comes from the journey read
-  # API instead (api-contract.md §5).
+  # they appear only as status-only entries on GET /api/v1/services. Their data comes from
+  # the journey read API instead (api-contract.md §5).
   #
   # The journey therefore COMPLETES when step 8 accepts. Nothing in the code counts to ten:
   # SagaStore uses registry.size(), so this list is the only place the length is decided.
@@ -117,6 +134,12 @@ orchestrator:
 
 cors:
   allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*}
+
+# Analytical APIs shown on the Services screen but never dispatched to by the saga.
+monitoring:
+  services:
+    - { serviceId: neo09, name: "Customer Support",                  base-url: "${SERVICE_09_URL:http://localhost:9009}" }
+    - { serviceId: neo10, name: "Portfolio & Regulatory Analytics", base-url: "${SERVICE_10_URL:http://localhost:9010}" }
 
 management:
   endpoints:

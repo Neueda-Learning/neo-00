@@ -70,6 +70,10 @@ public class SagaStore {
         /** Recorded, but it changes nothing (late, duplicate, or from the wrong service). */
         record Ignored(String why) implements CallbackOutcome {
         }
+
+        /** Not a journey. If a simulation owns this id the simulator takes it; otherwise it is litter. */
+        record Unknown(String applicationId) implements CallbackOutcome {
+        }
     }
 
     /** What the engine needs in order to POST one step. */
@@ -217,13 +221,19 @@ public class SagaStore {
      * Record a service's status update and decide what happens next.
      *
      * <p>The event is appended <em>whatever</em> it says — a late or misdirected report is still
-     * something that happened. What it does <em>not</em> do is change a terminal application: an
-     * update arriving a second after the sweeper gave up must not resurrect a journey.</p>
+     * something that happened. What it does <em>not</em> do is change a failed, rejected or
+     * completed application: an update arriving a second after the sweeper gave up must not
+     * resurrect a journey. A referral is the narrow exception: the same current service may
+     * later report the analyst's final {@code ACCEPTED} or {@code REJECTED} decision.</p>
      *
      * <p>{@code applicationId} is a parameter because it comes from the {@code PUT} URL, not from
      * the body.</p>
      *
-     * <p>The word itself is resolved through {@link StatusVocabulary} <em>before</em> the row is
+     * <p>An id this store does not own returns {@link CallbackOutcome.Unknown} without writing
+     * anything. The simulator may own it; otherwise it is deliberately dropped as litter.</p>
+     *
+     * <p>For a journey, the word itself is resolved through {@link StatusVocabulary}
+     * <em>before</em> the row is
      * written, so what lands in {@code application_event.status} is one of the four canonical
      * values. Both derived views depend on that: {@code toRow} paints the board dot straight from
      * this column, and {@code serviceSummaries} buckets on it. A module's own word stored here
@@ -234,7 +244,7 @@ public class SagaStore {
         Application app = applications.findById(applicationId).orElse(null);
         if (app == null) {
             log.warn("Status update for unknown application {} from {}", applicationId, cb.serviceId());
-            return new CallbackOutcome.Ignored("unknown application " + applicationId);
+            return new CallbackOutcome.Unknown(applicationId);
         }
 
         String reported = StatusVocabulary.normalize(cb.status());
@@ -256,13 +266,15 @@ public class SagaStore {
                     app.getId(), status);
         }
 
-        if (app.isTerminal()) {
+        ServiceDef expected = registry.byStep(app.getCurrentStep());
+        boolean resolvingReferral = isReferralResolution(app, expected, cb.serviceId(), status);
+
+        if (app.isTerminal() && !resolvingReferral) {
             log.info("Late status update for {} ({} already {}) — recorded, ignored",
                     app.getId(), cb.serviceId(), app.getOverallStatus());
             return new CallbackOutcome.Ignored("application already " + app.getOverallStatus());
         }
 
-        ServiceDef expected = registry.byStep(app.getCurrentStep());
         if (expected == null || !expected.serviceId().equals(cb.serviceId())) {
             log.warn("Status update for {} from {} but step {} belongs to {} — recorded, ignored",
                     app.getId(), cb.serviceId(), app.getCurrentStep(),
@@ -282,6 +294,16 @@ public class SagaStore {
                     cb.status(), cb.serviceId(), app.getId(), cb.serviceId(),
                     StatusVocabulary.acceptedWords(cb.serviceId()));
             return new CallbackOutcome.Ignored("unknown status " + cb.status());
+        }
+
+        if (resolvingReferral) {
+            app.setOverallStatus(Application.IN_PROGRESS);
+            applications.save(app);
+            events.save(new ApplicationEvent(app.getId(), step, cb.serviceId(),
+                    ApplicationEvent.REFERRAL_RESOLVED, status,
+                    "analyst resolved referral: " + cb.comment()));
+            log.info("{} resolved referral for {} as {} — journey may continue",
+                    cb.serviceId(), app.getId(), status);
         }
 
         // Only now, past every guard: a late, duplicate or wrong-step update is recorded in the
@@ -626,6 +648,20 @@ public class SagaStore {
                 finish(app, status, why);
             }
         });
+    }
+
+    /**
+     * A referral may only be resolved by the service that created the current stop, and only
+     * with a real final decision. This deliberately excludes FAILED/TIMEOUT, REJECTED and
+     * COMPLETED applications from every resurrection path.
+     */
+    private boolean isReferralResolution(Application app, ServiceDef expected,
+                                         String serviceId, String status) {
+        return Application.REFERRED.equals(app.getOverallStatus())
+                && expected != null
+                && expected.serviceId().equals(serviceId)
+                && (StatusVocabulary.ACCEPTED.equals(status)
+                    || StatusVocabulary.REJECTED.equals(status));
     }
 
     /** Which step a service occupies, falling back to the application's current step. */

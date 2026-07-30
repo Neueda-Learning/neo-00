@@ -21,6 +21,7 @@ import com.neobank.orchestrator.saga.SagaDtos.ApplicationDetail;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationStatusUpdate;
 import com.neobank.orchestrator.saga.SagaEngine;
 import com.neobank.orchestrator.saga.SagaStore;
+import com.neobank.orchestrator.simulator.SimulationService;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -57,6 +58,9 @@ class ApplicationControllerTest {
 
     @MockBean
     CustomerService customers;
+
+    @MockBean
+    SimulationService simulations;
 
     private void stubDetail(String id, String applicant, String product) {
         when(store.detail(id)).thenReturn(Optional.of(
@@ -226,9 +230,21 @@ class ApplicationControllerTest {
     @Test
     void anUnknownApplicationIs404NotAnEmptyObject() throws Exception {
         when(store.application("APP-NOPE")).thenReturn(Optional.empty());
+        when(simulations.application("APP-NOPE")).thenReturn(Optional.empty());
 
         mvc.perform(get("/api/v1/applications/{id}", "APP-NOPE"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void anIdMissFallsThroughToTheSimulator() throws Exception {
+        when(store.application("SIM-01-neo05-3")).thenReturn(Optional.empty());
+        when(simulations.application("SIM-01-neo05-3"))
+                .thenReturn(Optional.of(application("SIM-01-neo05-3", "Maria Nowak")));
+
+        mvc.perform(get("/api/v1/applications/{id}", "SIM-01-neo05-3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.applicationId").value("SIM-01-neo05-3"));
     }
 
     @Test
@@ -267,6 +283,18 @@ class ApplicationControllerTest {
 
         verify(store).board(200);
         verify(store, never()).applicationsByName(any(), anyInt());
+        verifyNoInteractions(simulations);
+    }
+
+    @Test
+    void nameSearchNeverFallsThroughToSimulations() throws Exception {
+        when(store.applicationsByName(eq("nowak"), anyInt())).thenReturn(List.of());
+
+        mvc.perform(get("/api/v1/applications").param("name", "nowak"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+
+        verifyNoInteractions(simulations);
     }
 
     // ---- POST /{id}/proceed: the demo button ----------------------------------------------

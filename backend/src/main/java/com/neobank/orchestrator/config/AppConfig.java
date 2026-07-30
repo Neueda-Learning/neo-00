@@ -14,7 +14,11 @@ import org.springframework.web.client.RestClient;
  *  the delayed dispatches, the generator tick and the timeout sweep. */
 @Configuration
 @EnableScheduling
-@EnableConfigurationProperties(com.neobank.orchestrator.saga.ServiceRegistry.class)
+@EnableConfigurationProperties({
+        com.neobank.orchestrator.saga.ServiceRegistry.class,
+        com.neobank.orchestrator.ops.MonitoringRegistry.class,
+        com.neobank.orchestrator.simulator.SimulatorProperties.class
+})
 public class AppConfig {
 
     /**

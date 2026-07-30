@@ -36,9 +36,10 @@ see §5.
 - The orchestrator dispatches **one service at a time** and **waits for the status update**
   before moving on — the `202` only acknowledges receipt.
 - Between a status update and the next dispatch it waits **1 second**.
-- **Only `ACCEPTED` advances the journey.** `REJECTED` ends it as `REJECTED`, `REFERRED`
-  ends it as `REFERRED`; the remaining steps are never dispatched. Your module's own word for
-  those outcomes works too — see §3.
+- **Only `ACCEPTED` advances the journey.** `REJECTED` ends it as `REJECTED`. `REFERRED`
+  stops automatic processing for human review; the same current service may later resolve it
+  with `ACCEPTED` (resume) or `REJECTED` (close). Until then, no later step is dispatched.
+  Your module's own word for those outcomes works too — see §3.
 - No status update within **30 seconds** → the step is recorded as `TIMEOUT` and the application
   ends as `FAILED`. Late updates against a finished application are logged and ignored.
 - Many applications are in flight at once; each *individual* journey is strictly sequential.
@@ -204,12 +205,12 @@ Matching ignores case, and treats `-`, `_` and a space as the same separator: `a
 |---|---|
 | `ACCEPTED` · `COMPLETED` · `APPROVED` | advances to the next step |
 | `REJECTED` | ends as `REJECTED` |
-| `REFERRED` · `APPLICATION-MANUAL` · `LOCAL-MANUAL` | ends as `REFERRED` |
+| `REFERRED` · `APPLICATION-MANUAL` · `LOCAL-MANUAL` | stops as `REFERRED` for human review; the same service may resolve it |
 | `IN-PROGRESS` · `PENDING` | keeps waiting — see *Reporting progress* |
 
 **From your module specifically**, taken from your brief's *Status mapping* row:
 
-| serviceId | advances | ends `REJECTED` | ends `REFERRED` |
+| serviceId | advances | ends `REJECTED` | refers for review |
 |---|---|---|---|
 | `neo01` verification | `PASSED` | `FAILED` | `REVIEW` |
 | `neo02` policy | `APPROVED` | `REJECTED` | `REFERRED` |
@@ -227,7 +228,8 @@ Matching ignores case, and treats `-`, `_` and a space as the same separator: `a
 Because it does not mean the same thing twice. For `neo01` and `neo03` it is a business answer —
 the applicant failed a rule — so the journey ends `REJECTED`. For `neo07` and `neo08` it is not a
 rejection at all: the core banking system or the card bureau was unreachable, nobody was refused,
-and a person retries — so the journey ends `REFERRED`.
+and a person retries — so the journey stops `REFERRED` until that service reports the person's
+final `ACCEPTED` or `REJECTED` decision.
 
 One global word→status table would silently reject applicants whose card bureau had a bad minute.
 That is why the table above is per module, and why it should not be flattened into one list.
@@ -372,6 +374,7 @@ refuse the request with a `400`.
 | `GET /api/v1/demo-mode` · `POST /api/v1/demo-mode` | demo stepping `{enabled, parked}` (below) |
 | `POST /api/v1/applications/{id}/proceed` | send the step a parked journey is waiting on (below) |
 | `PUT /api/v1/applications/{id}` | where services report their status back (§3) |
+| `/api/v1/simulator/**` | **instructor tooling, not module contract** — modules must never call it |
 | `GET /health` · `GET /info` | ops |
 
 Overall application status ∈ `IN_PROGRESS · COMPLETED · REJECTED · REFERRED · FAILED`.

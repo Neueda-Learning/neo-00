@@ -10,40 +10,68 @@ import { BarChart, Caption, Card, Grid, StatusPill, Tag } from '../design-system
  * ten services.
  */
 export default function ServicesScreen({ services }) {
-  const ceiling = Math.max(1, ...services.map((s) => s.total));
+  const ceiling = Math.max(1, ...services.filter((s) => !s.monitoringOnly).map((s) => s.total));
 
   return (
     <Grid cols="auto" min={320}>
       {services.map((s) => (
         <Card
           key={s.serviceId}
-          title={`${s.step}. ${s.name}`}
+          title={s.monitoringOnly ? s.name : `${s.step}. ${s.name}`}
           subtitle={s.serviceId}
           headEnd={
-            <StatusPill tone={s.inProgress > 0 ? 'info' : 'neutral'}>
-              {s.inProgress} in progress
-            </StatusPill>
+            !s.monitoringOnly && (
+              <StatusPill tone={s.inProgress > 0 ? 'info' : 'neutral'}>
+                {s.inProgress} in progress
+              </StatusPill>
+            )
           }
           foot={
             <>
-              {s.total} seen · <Tag>{s.baseUrl}</Tag>
+              {!s.monitoringOnly && `${s.total} seen · `}
+              <Tag>{s.baseUrl}</Tag>
             </>
           }
         >
-          <BarChart
-            labelWidth="90px"
-            max={ceiling}
-            data={[
-              { label: 'Accepted', value: s.accepted, tone: 'positive' },
-              { label: 'Rejected', value: s.rejected, tone: 'negative' },
-              { label: 'Referred', value: s.referred, tone: 'warning' },
-              ...(s.timedOut > 0
-                ? [{ label: 'Timed out', value: s.timedOut, tone: 'negative' }]
-                : []),
-            ]}
-          />
-          {s.total === 0 && (
-            <Caption>Nothing has reached this service yet.</Caption>
+          <div className="service-api-health">
+            <span>API Health</span>
+            <StatusPill
+              tone={
+                s.apiHealth === 'UP'
+                  ? 'positive'
+                  : s.apiHealth === 'DOWN'
+                    ? 'negative'
+                    : 'neutral'
+              }
+            >
+              {s.apiHealth === 'UP'
+                ? 'Up'
+                : s.apiHealth === 'DOWN'
+                  ? 'Down'
+                  : 'Checking'}
+            </StatusPill>
+          </div>
+          {!s.monitoringOnly && (
+            <>
+              <BarChart
+                labelWidth="90px"
+                max={ceiling}
+                data={[
+                  { label: 'Accepted', value: s.accepted, tone: 'positive' },
+                  { label: 'Rejected', value: s.rejected, tone: 'negative' },
+                  { label: 'Referred', value: s.referred, tone: 'warning' },
+                  ...(s.timedOut > 0
+                    ? [{ label: 'Timed out', value: s.timedOut, tone: 'negative' }]
+                    : []),
+                ]}
+              />
+              {s.total === 0 && (
+                <Caption>Nothing has reached this service yet.</Caption>
+              )}
+            </>
+          )}
+          {s.monitoringOnly && (
+            <Caption>Monitoring only · not part of the application journey.</Caption>
           )}
         </Card>
       ))}

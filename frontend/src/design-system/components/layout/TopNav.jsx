@@ -1,5 +1,6 @@
 import React from 'react';
 import { cx } from '../../internal/cx.js';
+import neoMark from '../../../assets/neo-bank-mark-inverse.svg';
 
 /**
  * The application bar: brand lock-up, screen tabs, and whatever controls belong to
@@ -16,13 +17,9 @@ export function TopNav({ brand, product, tabs = [], active, onSelect, actions, c
   return (
     <header className={cx('ds-nav', className)} {...rest}>
       <div className="ds-nav__brand">
-        <span>{brand}</span>
-        {product != null && (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className="ds-nav__brand-sub">{product}</span>
-          </>
-        )}
+        <img className="ds-nav__mark" src={neoMark} alt="" />
+        <span className="ds-nav__wordmark">{brand}</span>
+        {product != null && <span className="ds-nav__brand-sub">{product}</span>}
       </div>
 
       {tabs.length > 0 && (

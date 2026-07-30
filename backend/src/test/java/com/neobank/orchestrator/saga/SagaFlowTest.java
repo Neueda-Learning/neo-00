@@ -3,6 +3,9 @@ package com.neobank.orchestrator.saga;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.neobank.orchestrator.domain.Application;
+import com.neobank.orchestrator.domain.ApplicationEvent;
+import com.neobank.orchestrator.domain.ApplicationEventRepository;
+import com.neobank.orchestrator.domain.ApplicationRepository;
 import com.neobank.orchestrator.generator.GeneratorService;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationDetail;
 import com.neobank.orchestrator.saga.SagaDtos.ApplicationRequest;
@@ -12,6 +15,8 @@ import com.neobank.orchestrator.saga.SagaDtos.EventView;
 import com.neobank.orchestrator.saga.SagaDtos.ServiceSummary;
 import com.neobank.orchestrator.saga.SagaDtos.StepView;
 import com.neobank.orchestrator.saga.SagaStore.DispatchTarget;
+import com.neobank.orchestrator.simulator.Simulation;
+import com.neobank.orchestrator.simulator.SimulationRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -69,6 +74,15 @@ class SagaFlowTest {
 
     @Autowired
     SagaStore store;
+
+    @Autowired
+    ApplicationRepository applications;
+
+    @Autowired
+    ApplicationEventRepository events;
+
+    @Autowired
+    SimulationRepository simulations;
 
     // ---- the happy path ----
 
@@ -176,6 +190,42 @@ class SagaFlowTest {
         assertThat(stepsOf(id).get(1).status()).isEqualTo(StepView.PENDING);
     }
 
+    @Test
+    void referralCanBeClearedByTheSameServiceAndThenAdvances() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "REFERRED", "a human should look"));
+        assertThat(detail(id).overallStatus()).isEqualTo(Application.REFERRED);
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "ACCEPTED", "analyst cleared it"));
+        awaitDispatchOf(id, 2);
+
+        ApplicationDetail after = detail(id);
+        assertThat(after.overallStatus()).isEqualTo(Application.IN_PROGRESS);
+        assertThat(after.currentStep()).isEqualTo(2);
+        assertThat(stepsOf(id).get(0).status()).isEqualTo(StatusVocabulary.ACCEPTED);
+        assertThat(eventTypes(after)).contains(ApplicationEvent.REFERRAL_RESOLVED);
+    }
+
+    @Test
+    void referralCannotBeResolvedByAServiceThatDoesNotOwnTheCurrentStep() {
+        String id = startAndAwaitDispatch();
+
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo01", "REFERRED", "a human should look"));
+        engine.handleApplicationStatusUpdate(id,
+                new ApplicationStatusUpdate("neo02", "ACCEPTED", "not my referral"));
+        sleep(200);
+
+        ApplicationDetail after = detail(id);
+        assertThat(after.overallStatus()).isEqualTo(Application.REFERRED);
+        assertThat(after.currentStep()).isEqualTo(1);
+        assertThat(dispatchCount(after, 2)).isZero();
+        assertThat(eventTypes(after)).doesNotContain(ApplicationEvent.REFERRAL_RESOLVED);
+    }
+
     // ---- the things that must not happen ----
 
     @Test
@@ -262,10 +312,44 @@ class SagaFlowTest {
 
     @Test
     void callbackForAnUnknownApplicationIsIgnoredNotFatal() {
+        long applicationCount = applications.count();
+        long eventCount = events.count();
+        List<ServiceSummary> summaries = store.serviceSummaries();
+
         engine.handleApplicationStatusUpdate("APP-NOPE",
                 new ApplicationStatusUpdate("neo01", "ACCEPTED", "?"));
-        // Reaching here without an exception is the assertion: a stray callback must not
-        // break the endpoint that every service depends on.
+
+        assertThat(applications.count()).isEqualTo(applicationCount);
+        assertThat(events.count()).isEqualTo(eventCount);
+        assertThat(simulations.count()).isZero();
+        assertThat(store.serviceSummaries()).isEqualTo(summaries);
+    }
+
+    @Test
+    void aSimulationReportCreatesNoJourneyEventWhileALiveJourneyStillAdvances() {
+        Simulation simulation = new Simulation(
+                "pending", "sim-correlation", "SIM-01", "neo04", "http://localhost:9004");
+        simulation = simulations.saveAndFlush(simulation);
+        String simulationId = "SIM-01-neo04-" + simulation.getId();
+        simulation.prepare(simulationId, "sim-correlation",
+                "{\"applicationId\":\"" + simulationId + "\"}");
+        simulations.saveAndFlush(simulation);
+        long eventsBefore = events.count();
+
+        engine.handleApplicationStatusUpdate(simulationId,
+                new ApplicationStatusUpdate("neo04", "CLEAR", "no match"));
+
+        Simulation reported = simulations.findById(simulation.getId()).orElseThrow();
+        assertThat(reported.getReportedStatus()).isEqualTo("CLEAR");
+        assertThat(reported.getCanonicalStatus()).isEqualTo(StatusVocabulary.ACCEPTED);
+        assertThat(events.count()).isEqualTo(eventsBefore);
+        assertThat(applications.existsById(simulationId)).isFalse();
+
+        String journeyId = startAndAwaitDispatch();
+        engine.handleApplicationStatusUpdate(journeyId,
+                new ApplicationStatusUpdate("neo01", "ACCEPTED", "ok"));
+        awaitDispatchOf(journeyId, 2);
+        assertThat(detail(journeyId).currentStep()).isEqualTo(2);
     }
 
     // ---- demo stepping ----

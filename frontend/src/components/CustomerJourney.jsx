@@ -2,9 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   AppShell,
   Button,
-  Card,
-  Grid,
-  KeyValue,
   PageHeader,
   TopNav,
 } from '../design-system';
@@ -20,6 +17,19 @@ const STEPS = [
   { key: 'form', label: 'Your details' },
   { key: 'status', label: 'Decision' },
 ];
+
+const STUDENT_PREVIEW = {
+  code: 'CREDIT_CARD_STUDENT',
+  name: 'Student Card',
+  tagline: 'Your first Neo card is on the way',
+  accent: 'student',
+  comingSoon: true,
+  features: [
+    'Designed around student life',
+    'Simple mobile spending controls',
+    'Full product details coming soon',
+  ],
+};
 
 /**
  * Everything a signed-in customer sees: what they already have, and the flow to get more —
@@ -62,10 +72,11 @@ export default function CustomerJourney({ customerId, initialItems = [], onLogou
 
   return (
     <AppShell
+      className="customer-shell"
       nav={
         <TopNav
-          brand="NEO"
-          product="Your bank"
+          brand="NEO BANK"
+          product="Your account"
           actions={
             <>
               {/* The apply rail means nothing over a list of things you already own. */}
@@ -193,52 +204,143 @@ function ProductStep({ onChoose, onBack }) {
   }, []);
 
   return (
-    <>
-      <PageHeader
-        title="Choose your card"
-        lede="two cards, two tiers — pick one to start your application"
-        actions={
-          onBack && (
-            <Button variant="ghost" onClick={onBack}>
-              ← Back to your account
-            </Button>
-          )
-        }
-      />
-      <Grid cols="auto" min={360}>
-        {products.map((p) => (
-          <Card key={p.code} bodyless>
-            <div className={`product-face product-face--${p.accent}`}>
-              <span className="product-face__brand">Neo</span>
-              <span className="product-face__chip" aria-hidden="true" />
-              <span className="product-face__name">{p.name}</span>
-            </div>
-            <div style={{ padding: 'var(--ds-space-5)' }}>
-              <p>{p.tagline}</p>
+    <section className="card-shop">
+      <div className="card-shop__intro">
+        <div>
+          <p className="card-shop__eyebrow">Neo credit cards</p>
+          <PageHeader
+            title="Choose your card"
+            lede="Straightforward credit, built around how you spend."
+          />
+        </div>
+        {onBack && (
+          <Button variant="ghost" onClick={onBack}>
+            ← Back to your account
+          </Button>
+        )}
+      </div>
+
+      <div className="card-shop__offers">
+        {[...products, STUDENT_PREVIEW].map((p) => (
+          <article
+            key={p.code}
+            className={`product-offer product-offer--${p.accent}`}
+          >
+            {(p.accent === 'platinum' || p.comingSoon) && (
+              <span className="product-offer__recommended">
+                {p.comingSoon ? 'Coming soon' : 'Most rewarding'}
+              </span>
+            )}
+
+            <div className="product-offer__content">
+              <div className="product-offer__heading">
+                <p className="product-offer__kicker">{p.name}</p>
+                <h2>{p.tagline}</h2>
+              </div>
+
               <ul className="product-features">
                 {p.features.map((f) => (
                   <li key={f}>{f}</li>
                 ))}
               </ul>
-              <KeyValue
-                items={[
-                  ['Credit limit', `${money(p.minLimit)} – ${money(p.maxLimit)}`],
-                  ['Representative APR', `${p.apr}%`],
-                  ['Minimum income', money(p.minIncome)],
-                ]}
-              />
-              <Button
-                variant="primary"
-                block
-                onClick={() => onChoose(p)}
-                style={{ marginTop: 'var(--ds-space-5)' }}
-              >
-                Choose {p.name}
-              </Button>
+
+              {p.comingSoon ? (
+                <>
+                  <dl className="product-offer__facts">
+                    <div>
+                      <dt>Availability</dt>
+                      <dd>Coming soon</dd>
+                    </div>
+                    <div>
+                      <dt>Credit limit</dt>
+                      <dd>To be announced</dd>
+                    </div>
+                    <div>
+                      <dt>Representative APR</dt>
+                      <dd>To be announced</dd>
+                    </div>
+                  </dl>
+                  <p className="product-offer__eligibility">
+                    Pricing and eligibility details will be published before applications open.
+                  </p>
+                  <Button variant="secondary" block disabled>
+                    Coming soon
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <dl className="product-offer__facts">
+                    <div>
+                      <dt>Annual fee</dt>
+                      <dd>£0</dd>
+                    </div>
+                    <div>
+                      <dt>Credit limit</dt>
+                      <dd>{money(p.minLimit)}–{money(p.maxLimit)}</dd>
+                    </div>
+                    <div>
+                      <dt>Representative APR</dt>
+                      <dd>{p.apr}%</dd>
+                    </div>
+                  </dl>
+                  <p className="product-offer__eligibility">
+                    Minimum income {money(p.minIncome)}. Eligibility and the credit limit offered
+                    are subject to status.
+                  </p>
+                  <Button
+                    variant="primary"
+                    block
+                    onClick={() => onChoose(p)}
+                  >
+                    Apply for the {p.name}
+                  </Button>
+                </>
+              )}
             </div>
-          </Card>
+
+            <div className="product-offer__visual">
+              <p className="product-offer__tier">
+                {p.comingSoon ? 'Student' : p.accent === 'platinum' ? 'Rewards' : 'Everyday'}
+              </p>
+              <div
+                className="product-card-stack"
+                tabIndex="0"
+                aria-label={`${p.name}. Hover or focus to reveal the back of the card.`}
+              >
+                <div
+                  className={`product-face product-face--back product-face--${p.accent}`}
+                  aria-hidden="true"
+                >
+                  <span className="product-face__stripe" />
+                  <span className="product-face__signature">AUTHORISED SIGNATURE</span>
+                  <span className="product-face__number">
+                    ••••&nbsp; ••••&nbsp; ••••&nbsp; 2048
+                  </span>
+                  <span className="product-face__back-brand">NEO / CREDIT</span>
+                </div>
+
+                <div className={`product-face product-face--front product-face--${p.accent}`}>
+                  <div className="product-face__topline">
+                    <span className="product-face__brand">NEO</span>
+                    <span className="product-face__contactless" aria-hidden="true">)))</span>
+                  </div>
+                  <span className="product-face__chip" aria-hidden="true" />
+                  <div className="product-face__bottomline">
+                    <span className="product-face__name">{p.name}</span>
+                    <span className="product-face__network">N</span>
+                  </div>
+                </div>
+              </div>
+              <p className="product-offer__reveal">Hover to reveal card back</p>
+            </div>
+          </article>
         ))}
-      </Grid>
-    </>
+      </div>
+
+      <p className="card-shop__legal">
+        Representative example: assuming your account is used only for purchases and the
+        balance is repaid in equal monthly payments over 12 months. Rates are variable.
+      </p>
+    </section>
   );
 }

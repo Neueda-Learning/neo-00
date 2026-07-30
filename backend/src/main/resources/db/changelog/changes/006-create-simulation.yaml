@@ -1,0 +1,90 @@
+# One operator-triggered call to one configured module. Simulations are deliberately separate
+# from application/application_event: they are not journeys and must never affect the board,
+# timeout sweeper, generator sequence, or service tallies.
+#
+# VARCHAR rather than TEXT keeps Hibernate validation identical on H2 and MySQL. There is no
+# BOOLEAN for the same reason. application_json is capped at 4000 because utf8mb4 charges the
+# declared four bytes per character against InnoDB's 65535-byte row budget; an oversized payload
+# is stored as NULL by the application rather than truncated into invalid JSON.
+databaseChangeLog:
+  - changeSet:
+      id: 006-create-simulation
+      author: neo-00
+      changes:
+        - createTable:
+            tableName: simulation
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: application_id
+                  type: VARCHAR(80)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: correlation_id
+                  type: VARCHAR(100)
+              - column:
+                  name: scenario_id
+                  type: VARCHAR(24)
+              - column:
+                  name: target_service_id
+                  type: VARCHAR(24)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: target_url
+                  type: VARCHAR(500)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sent_at
+                  type: TIMESTAMP
+              - column:
+                  name: ack_http_status
+                  type: INT
+              - column:
+                  name: ack_body
+                  type: VARCHAR(4000)
+              - column:
+                  name: reported_service_id
+                  type: VARCHAR(24)
+              - column:
+                  name: reported_status
+                  type: VARCHAR(100)
+              - column:
+                  name: canonical_status
+                  type: VARCHAR(24)
+              - column:
+                  name: reported_comment
+                  type: VARCHAR(500)
+              - column:
+                  name: reported_at
+                  type: TIMESTAMP
+              - column:
+                  name: application_json
+                  type: VARCHAR(4000)
+        - createIndex:
+            tableName: simulation
+            indexName: idx_simulation_application
+            columns:
+              - column:
+                  name: application_id
+              - column:
+                  name: id
+        - createIndex:
+            tableName: simulation
+            indexName: idx_simulation_target
+            columns:
+              - column:
+                  name: target_service_id
+              - column:
+                  name: id
+      rollback:
+        - dropTable:
+            tableName: simulation

@@ -65,6 +65,13 @@ public class ApplicationEvent {
      * asked and has not finished, which is exactly what in-flight means.</p>
      */
     public static final String AWAITING_SIGNATURE = "AWAITING_SIGNATURE";
+    /**
+     * The service that referred an application later supplied the analyst's final decision.
+     *
+     * <p>The original referral and journey-end rows remain untouched. This row explains why the
+     * journey subsequently resumed or changed to a final rejection.</p>
+     */
+    public static final String REFERRAL_RESOLVED = "REFERRAL_RESOLVED";
     /** No callback arrived within the timeout. */
     public static final String TIMEOUT = "TIMEOUT";
     /** The journey reached a terminal state. */

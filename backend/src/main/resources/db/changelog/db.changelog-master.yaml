@@ -11,3 +11,5 @@ databaseChangeLog:
       file: db/changelog/changes/004-add-awaiting-signature.yaml
   - include:
       file: db/changelog/changes/005-add-customer.yaml
+  - include:
+      file: db/changelog/changes/006-create-simulation.yaml

@@ -10,6 +10,7 @@ import com.neobank.orchestrator.saga.SagaDtos.ApplicationStatusUpdate;
 import com.neobank.orchestrator.saga.SagaDtos.BoardSummary;
 import com.neobank.orchestrator.saga.SagaEngine;
 import com.neobank.orchestrator.saga.SagaStore;
+import com.neobank.orchestrator.simulator.SimulationService;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.time.Instant;
@@ -42,13 +43,15 @@ public class ApplicationController {
     private final GeneratorService generator;
     private final SagaEngine engine;
     private final CustomerService customers;
+    private final SimulationService simulations;
 
     public ApplicationController(SagaStore store, GeneratorService generator, SagaEngine engine,
-                                CustomerService customers) {
+                                CustomerService customers, SimulationService simulations) {
         this.store = store;
         this.generator = generator;
         this.engine = engine;
         this.customers = customers;
+        this.simulations = simulations;
     }
 
     /**
@@ -58,7 +61,8 @@ public class ApplicationController {
      *
      * <p>Always answers {@code 200}, even for an update that changes nothing. A service must not be
      * left retrying because its late, duplicate or misdirected report was refused; it is recorded
-     * either way, and {@link SagaStore} decides whether it matters.</p>
+     * when the id belongs to a journey or simulation; unknown litter is deliberately dropped.
+     * {@link SagaStore} decides whether a journey report matters.</p>
      *
      * <p>The id comes from the path, so the body carries only {@code serviceId}, {@code status} and
      * {@code comment}.</p>
@@ -184,7 +188,7 @@ public class ApplicationController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> get(@PathVariable String id) {
-        return ResponseEntity.of(store.application(id));
+        return ResponseEntity.of(store.application(id).or(() -> simulations.application(id)));
     }
 
     /**

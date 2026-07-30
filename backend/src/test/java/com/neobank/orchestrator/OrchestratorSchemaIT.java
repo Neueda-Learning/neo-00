@@ -6,6 +6,9 @@ import com.neobank.orchestrator.domain.Application;
 import com.neobank.orchestrator.domain.ApplicationEvent;
 import com.neobank.orchestrator.domain.ApplicationEventRepository;
 import com.neobank.orchestrator.domain.ApplicationRepository;
+import com.neobank.orchestrator.simulator.Simulation;
+import com.neobank.orchestrator.simulator.SimulationRepository;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +56,9 @@ class OrchestratorSchemaIT {
     @Autowired
     ApplicationEventRepository events;
 
+    @Autowired
+    SimulationRepository simulations;
+
     @Test
     void schemaValidatesAndStartsEmpty() {
         assertThat(applications.findAll()).isEmpty();
@@ -89,5 +95,35 @@ class OrchestratorSchemaIT {
 
         assertThat(events.findByApplicationIdOrderByIdAsc("APP-9002").get(0).getComment())
                 .hasSize(500);
+    }
+
+    @Test
+    void simulationVarchar4000FitsMysqlAndNewestUsesIdAsTheTiebreak() {
+        String applicationJson = "{\"x\":\"" + "x".repeat(3992) + "\"}";
+        assertThat(applicationJson).hasSize(Simulation.APPLICATION_JSON_MAX);
+
+        Simulation first = simulations.saveAndFlush(
+                new Simulation("pending", "corr-1", "SIM-01", "neo01", "http://neo-01:8080"));
+        first.prepare("SIM-01-neo01-" + first.getId(), "corr-1", applicationJson);
+        simulations.saveAndFlush(first);
+
+        Simulation second = simulations.saveAndFlush(
+                new Simulation("pending", "corr-2", "SIM-02", "neo01", "http://neo-01:8080"));
+        second.prepare("SIM-02-neo01-" + second.getId(), "corr-2", applicationJson);
+        simulations.saveAndFlush(second);
+
+        assertThat(simulations.findById(first.getId()).orElseThrow().getApplicationJson())
+                .hasSize(Simulation.APPLICATION_JSON_MAX);
+        assertThat(simulations.findByTargetServiceIdOrderByIdDesc("neo01"))
+                .extracting(Simulation::getId)
+                .containsExactly(second.getId(), first.getId());
+
+        Simulation oversized = simulations.saveAndFlush(
+                new Simulation("pending", "corr-3", "SIM-03", "neo01", "http://neo-01:8080"));
+        oversized.prepare("SIM-03-neo01-" + oversized.getId(), "corr-3",
+                applicationJson + "x");
+        simulations.saveAndFlush(oversized);
+        assertThat(simulations.findById(oversized.getId()).orElseThrow().getApplicationJson())
+                .isNull();
     }
 }

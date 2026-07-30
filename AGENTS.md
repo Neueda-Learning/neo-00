@@ -28,6 +28,8 @@ absent modules simply time out.
    REFERRED`. `ApplicationControllerTest` pins it. If a change makes it fail, the change is
    wrong — and here that is not a figure of speech: a breaking edit lands on ten teams at once,
    so it has to be made in the orchestrator, the sidecar and the template together.
+   The instructor simulator is the narrow exception: it is orchestrator-only tooling that reuses
+   the existing wire and adds no surface a module implements or calls.
    Those three are what a module should **send**; the orchestrator also **accepts** each
    module's own brief word (`PASSED`, `CLEAR`, `SIGNED`, `ISSUED`…) and the briefs' canonical
    set, because the briefs predate the simplified contract and a team can reasonably arrive at

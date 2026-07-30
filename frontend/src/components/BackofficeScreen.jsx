@@ -143,11 +143,12 @@ export default function BackofficeScreen({ onHome }) {
 
   return (
     <AppShell
+      className="backoffice-shell"
       wide
       nav={
         <TopNav
-          brand="NEO"
-          product="Backoffice"
+          brand="NEO BANK"
+          product="Command centre"
           tabs={TABS}
           active={screen}
           onSelect={setScreen}
@@ -185,7 +186,7 @@ export default function BackofficeScreen({ onHome }) {
           }
         />
       }
-      footer="Each application visits the ten services in order, waiting for a callback at every step. Only ACCEPTED advances."
+      footer="Each application visits the configured services in order, waiting for a callback at every step. Only ACCEPTED advances."
     >
       {error && (
         <Alert
@@ -233,7 +234,7 @@ function GeneratorControls({ generator, running, busy, onToggle, onInterval, onC
         onChange={(e) => onInterval(Number(e.target.value))}
         aria-label="Milliseconds between generated applications"
         title="Milliseconds between generated applications"
-        style={{ width: '7ch' }}
+        style={{ width: '9ch' }}
       />
       <Button
         variant="secondary"

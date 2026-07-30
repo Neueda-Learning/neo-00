@@ -67,3 +67,13 @@ export function clock(iso) {
 }
 
 export const money = (n) => (n == null ? null : `£${Number(n).toLocaleString()}`);
+
+/** The acknowledgement of a one-shot simulator POST. */
+export function httpTone(status) {
+  const code = Number(status);
+  if (code === 202) return TONES.POSITIVE;
+  if (code === 0 || code >= 400) return TONES.NEGATIVE;
+  if (code >= 200 && code < 300) return TONES.POSITIVE;
+  if (code >= 300) return TONES.WARNING;
+  return TONES.NEUTRAL;
+}

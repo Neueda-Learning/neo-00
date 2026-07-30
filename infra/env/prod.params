@@ -33,3 +33,4 @@ Step8ServiceId=neo08
 Step8Name=Card Issuing
 Step8BaseUrl=http://neo-08.neobank-prod.local:8080
 SupportBaseUrl=http://neo-09.neobank-prod.local:8080
+AnalyticsBaseUrl=http://neo-10.neobank-prod.local:8080

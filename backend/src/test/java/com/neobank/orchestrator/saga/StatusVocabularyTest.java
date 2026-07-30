@@ -150,6 +150,17 @@ class StatusVocabularyTest {
     }
 
     @Test
+    void rawAndCanonicalWordsRemainDistinctForTheSimulator() {
+        String raw = "CLEAR";
+        assertThat(StatusVocabulary.canonical("neo04", raw))
+                .contains(StatusVocabulary.ACCEPTED);
+        assertThat(raw).isEqualTo("CLEAR");
+
+        assertThat(StatusVocabulary.canonical("neo04", "mystery")).isEmpty();
+        assertThat(StatusVocabulary.acceptedWords("neo04")).contains("CLEAR");
+    }
+
+    @Test
     void aModuleWithNoTableOfItsOwnStillGetsTheGlobalWords() {
         assertThat(StatusVocabulary.canonical("neo10", "COMPLETED")).contains(StatusVocabulary.ACCEPTED);
         assertThat(StatusVocabulary.canonical("neo10", "PASSED")).isEmpty();

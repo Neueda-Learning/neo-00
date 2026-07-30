@@ -71,12 +71,30 @@ class OrchestratorApplicationTests {
     }
 
     @Test
-    void servicesScreenListsAllEightBoxesEvenBeforeAnyTraffic() throws Exception {
+    void servicesScreenListsEightJourneyServicesAndTwoMonitoringOnlyApis() throws Exception {
         mvc.perform(get("/api/v1/services"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(8)))
+                .andExpect(jsonPath("$", hasSize(10)))
                 .andExpect(jsonPath("$[0].serviceId").value("neo01"))
-                .andExpect(jsonPath("$[0].step").value(1));
+                .andExpect(jsonPath("$[0].step").value(1))
+                .andExpect(jsonPath("$[8].serviceId").value("neo09"))
+                .andExpect(jsonPath("$[8].monitoringOnly").value(true))
+                .andExpect(jsonPath("$[8].total").doesNotExist())
+                .andExpect(jsonPath("$[9].serviceId").value("neo10"))
+                .andExpect(jsonPath("$[9].monitoringOnly").value(true));
+    }
+
+    @Test
+    void simulatorHasAllTenConfiguredTargetsWithAnalyticsFlagged() throws Exception {
+        mvc.perform(get("/api/v1/simulator/targets"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(10)))
+                .andExpect(jsonPath("$[0].serviceId").value("neo01"))
+                .andExpect(jsonPath("$[0].analytical").value(false))
+                .andExpect(jsonPath("$[8].serviceId").value("neo09"))
+                .andExpect(jsonPath("$[8].analytical").value(true))
+                .andExpect(jsonPath("$[9].serviceId").value("neo10"))
+                .andExpect(jsonPath("$[9].analytical").value(true));
     }
 
     @Test

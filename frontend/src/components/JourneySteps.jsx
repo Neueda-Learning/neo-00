@@ -39,6 +39,8 @@ export default function JourneySteps({ steps = [], services = [], awaitingSignat
             className={[
               'journey-steps__item',
               s.status === STEP_IN_FLIGHT && 'journey-steps__item--active',
+              s.status === 'ACCEPTED' && 'journey-steps__item--done',
+              s.status === 'REFERRED' && 'journey-steps__item--referred',
               s.status === STEP_PENDING && 'journey-steps__item--idle',
             ]
               .filter(Boolean)

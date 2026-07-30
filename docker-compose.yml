@@ -104,13 +104,11 @@ services:
       SERVICE_06_URL: http://neo-06:8080
       SERVICE_07_URL: http://neo-07:8080
       SERVICE_08_URL: http://neo-08:8080
-      # SERVICE_09_URL is an ADDRESS, NOT A STEP. neo-09 and neo-10 are analytical modules and
-      # are not in the journey — nothing is ever dispatched to them, because the journey is the
-      # eight entries of orchestrator.services[] in application.yml and neither appears there.
-      # This is here only so a customer who has finished can open a support case through the
-      # orchestrator, which is the only door any module is reachable through. No SERVICE_10_URL:
-      # nothing calls neo-10 yet.
+      # SERVICE_09_URL and SERVICE_10_URL are ADDRESSES, NOT STEPS. neo-09 and neo-10 are not in
+      # the eight-entry journey. They feed monitoring, support, and the instructor simulator;
+      # only an explicit simulator click dispatches a contract application to either one.
       SERVICE_09_URL: http://neo-09:8080
+      SERVICE_10_URL: http://neo-10:8080
     ports:
       - "${API_PORT:-9000}:8080"
     depends_on:

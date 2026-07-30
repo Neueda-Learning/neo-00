@@ -115,6 +115,12 @@ Parameters:
       support case through the orchestrator, which is the only door a module is reachable
       through. Set it in infra/env/*.params: an empty value is still a SET environment variable,
       so it would override application.yml's localhost default with "" rather than fall back.
+  AnalyticsBaseUrl:
+    Type: String
+    Default: ""
+    Description: >-
+      neo-10's analytics address. It is not a journey step; neo-00 calls its health endpoint for
+      the Services screen and can make an explicit one-shot instructor simulator dispatch.
 
   # --- module-only ---
   ServiceId:
@@ -252,7 +258,7 @@ Resources:
               # the highest-precedence source that supplies orchestrator.services supplies
               # ALL of it — these thirty variables replace application.yml's list entirely
               # rather than adding to it. Index is 0-based; `step` is 1-based. Check it
-              # worked: GET /api/v1/services must return ten rows.
+              # worked: GET /api/v1/services must return eight rows.
               - { Name: ORCHESTRATOR_SERVICES_0_STEP, Value: "1" }
               - { Name: ORCHESTRATOR_SERVICES_0_SERVICEID, Value: !Ref Step1ServiceId }
               - { Name: ORCHESTRATOR_SERVICES_0_NAME, Value: !Ref Step1Name }
@@ -285,7 +291,19 @@ Resources:
               - { Name: ORCHESTRATOR_SERVICES_7_SERVICEID, Value: !Ref Step8ServiceId }
               - { Name: ORCHESTRATOR_SERVICES_7_NAME, Value: !Ref Step8Name }
               - { Name: ORCHESTRATOR_SERVICES_7_BASEURL, Value: !Ref Step8BaseUrl }
+              # The simulator is a sibling configuration block and therefore cannot borrow the
+              # collection above. These same eight addresses plus the two analytical addresses
+              # make its configured-only ten-target list resolve inside the VPC.
+              - { Name: SERVICE_01_URL, Value: !Ref Step1BaseUrl }
+              - { Name: SERVICE_02_URL, Value: !Ref Step2BaseUrl }
+              - { Name: SERVICE_03_URL, Value: !Ref Step3BaseUrl }
+              - { Name: SERVICE_04_URL, Value: !Ref Step4BaseUrl }
+              - { Name: SERVICE_05_URL, Value: !Ref Step5BaseUrl }
+              - { Name: SERVICE_06_URL, Value: !Ref Step6BaseUrl }
+              - { Name: SERVICE_07_URL, Value: !Ref Step7BaseUrl }
+              - { Name: SERVICE_08_URL, Value: !Ref Step8BaseUrl }
               - { Name: SERVICE_09_URL, Value: !Ref SupportBaseUrl }
+              - { Name: SERVICE_10_URL, Value: !Ref AnalyticsBaseUrl }
               - { Name: CORS_ALLOWED_ORIGIN_PATTERNS, Value: !Sub "http://${AlbDnsName},http://localhost:*" }
             - - { Name: JAVA_TOOL_OPTIONS, Value: "-XX:MaxRAMPercentage=70" }
               - { Name: DB_URL, Value: !Sub "jdbc:mysql://${DbEndpoint}:3306/${DbName}" }
