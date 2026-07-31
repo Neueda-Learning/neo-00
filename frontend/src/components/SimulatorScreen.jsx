@@ -20,6 +20,7 @@ import {
   TopNav,
 } from '../design-system';
 import { api } from '../api.js';
+import { DESTINATIONS } from '../nav.js';
 import { clock, httpTone } from '../status.js';
 
 const DOMAIN = {
@@ -45,7 +46,7 @@ function scenarioIdFrom(row) {
   return match?.[1] || 'CUSTOM';
 }
 
-export default function SimulatorScreen({ onHome }) {
+export default function SimulatorScreen({ current, onNavigate }) {
   const [health, setHealth] = useState(null);
   const [scenarios, setScenarios] = useState([]);
   const [targets, setTargets] = useState([]);
@@ -209,13 +210,13 @@ export default function SimulatorScreen({ onHome }) {
     <TopNav
       brand="NEO"
       product="Simulator"
+      tabs={DESTINATIONS}
+      active={current}
+      onSelect={onNavigate}
       actions={
-        <>
-          <StatusPill tone={health?.status === 'UP' ? 'positive' : 'negative'}>
-            {health?.status || 'UNKNOWN'}
-          </StatusPill>
-          <Button variant="ghost" size="sm" onClick={onHome}>← Home</Button>
-        </>
+        <StatusPill tone={health?.status === 'UP' ? 'positive' : 'negative'}>
+          {health?.status || 'UNKNOWN'}
+        </StatusPill>
       }
     />
   );

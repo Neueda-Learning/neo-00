@@ -587,14 +587,19 @@ body {
   overflow: hidden;
 }
 
+/* Sized for the narrowest card this ever renders at, not the widest: with four
+   choices on the landing grid a "desktop" card is already only ~300px wide (the
+   same width the ribbon used to be tuned for at 760px), so the safe (smaller)
+   sizing is the only size — a media-query-gated larger version would just bring
+   the old clipped-CTA bug back the next time a card gets this narrow again. */
 .choice::after {
   content: '';
   position: absolute;
-  width: 180px;
-  height: 180px;
-  right: -120px;
-  bottom: -120px;
-  border: 28px solid var(--neo-gold);
+  width: 120px;
+  height: 120px;
+  right: -80px;
+  bottom: -80px;
+  border: 20px solid var(--neo-gold);
   transform: rotate(45deg);
   transition: transform 240ms ease, right 240ms ease, bottom 240ms ease;
 }
@@ -606,8 +611,8 @@ body {
 }
 
 .choice:hover::after {
-  right: -90px;
-  bottom: -90px;
+  right: -60px;
+  bottom: -60px;
   border-color: var(--neo-ink);
   transform: rotate(45deg) scale(1.2);
 }

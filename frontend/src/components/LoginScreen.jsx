@@ -11,6 +11,7 @@ import {
   TopNav,
 } from '../design-system';
 import { api } from '../api.js';
+import { DESTINATIONS } from '../nav.js';
 
 /** Two letters, two digits. Short enough to say out loud and to type without looking. */
 const CODE = /^[A-Z]{2}[0-9]{2}$/;
@@ -25,7 +26,7 @@ const CODE = /^[A-Z]{2}[0-9]{2}$/;
  *
  * This identifies; it does not authenticate. Anyone who types your code is you.
  */
-export default function LoginScreen({ onSignedIn, onHome }) {
+export default function LoginScreen({ onSignedIn, current, onNavigate }) {
   const [code, setCode] = useState('');
   const [hint, setHint] = useState(null);   // 'taken' | 'free' | 'unknown' | null
   const [busy, setBusy] = useState(false);
@@ -79,11 +80,9 @@ export default function LoginScreen({ onSignedIn, onHome }) {
         <TopNav
           brand="NEO BANK"
           product="Customer access"
-          actions={
-            <Button variant="ghost" size="sm" onClick={onHome}>
-              ← Home
-            </Button>
-          }
+          tabs={DESTINATIONS}
+          active={current}
+          onSelect={onNavigate}
         />
       }
     >

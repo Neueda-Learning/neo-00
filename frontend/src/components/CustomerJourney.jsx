@@ -6,6 +6,7 @@ import {
   TopNav,
 } from '../design-system';
 import { api } from '../api.js';
+import { DESTINATIONS } from '../nav.js';
 import { PRODUCTS, productByCode, withLiveCatalogue } from '../products.js';
 import { money } from '../status.js';
 import ApplicationForm from './ApplicationForm.jsx';
@@ -40,11 +41,23 @@ const STUDENT_PREVIEW = {
  *
  * <p>The shell lives here rather than higher up because the customer's code and the Logout
  * button belong on every one of these screens, and this is the component that owns the bar.</p>
+ *
+ * <p>{@code startStep} is how the landing page's two customer doors diverge after the same
+ * login screen: "Apply for a card" passes {@code 'product'} (skip straight to the picker),
+ * "Sign in" passes {@code 'home'} (see what you already have). Omit it and the old
+ * has-something-vs-new-customer default applies.</p>
  */
-export default function CustomerJourney({ customerId, initialItems = [], onLogout }) {
+export default function CustomerJourney({
+  customerId,
+  initialItems = [],
+  startStep,
+  onNavigate,
+  onLogout,
+}) {
   // Somebody who already has something lands on it; somebody new goes straight to the cards,
-  // because an empty list is not worth a screen of its own.
-  const [step, setStep] = useState(initialItems.length ? 'home' : 'product');
+  // because an empty list is not worth a screen of its own. An explicit startStep (Apply vs
+  // Sign in) always wins over that guess.
+  const [step, setStep] = useState(startStep ?? (initialItems.length ? 'home' : 'product'));
   const [items, setItems] = useState(initialItems);
   const [product, setProduct] = useState(null);
   const [applicationId, setApplicationId] = useState(null);
@@ -62,12 +75,34 @@ export default function CustomerJourney({ customerId, initialItems = [], onLogou
     }
   }
 
+  // initialItems is a snapshot from the moment of sign-in. Apply straight through to a
+  // submission, then use the nav bar to jump to Sign in without leaving this component's own
+  // remount cycle behind, and that snapshot would be all Sign in ever showed. One background
+  // refresh on mount keeps it honest without turning every screen into a poller.
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function backToHome() {
     const fresh = await refresh();
     setProduct(null);
     setApplicationId(null);
     setKind(null);
     setStep(fresh.length ? 'home' : 'product');
+  }
+
+  // Apply and Sign in both point back into THIS component once you're already signed in, so a
+  // click on either has to move `step` directly rather than round-trip through the parent's
+  // loginIntent: that value often doesn't change (you can reach the account screen with intent
+  // still 'apply', e.g. after finishing an application), and a no-op state update means no
+  // remount and no effect at all. `active` mirrors it: it reflects what's on screen, not which
+  // door you came in — the two only look the same right after signing in.
+  const active = step === 'home' ? 'signin' : 'apply';
+  function handleNavigate(id) {
+    if (id === 'apply') { setStep('product'); return; }
+    if (id === 'signin') { backToHome(); return; }
+    onNavigate(id);
   }
 
   return (
@@ -77,6 +112,16 @@ export default function CustomerJourney({ customerId, initialItems = [], onLogou
         <TopNav
           brand="NEO BANK"
           product="Your account"
+          // The cross-page tabs and the apply rail both answer "where am I", and the bar is
+          // already carrying the customer code and Log out. On 'form' and 'status' there's
+          // real in-progress work (and both already have their own way back — Back, or Apply
+          // for another / Your account) so the tabs step aside rather than clip mid-word.
+          // 'product' keeps them: a brand-new customer with nothing yet has NO other way off
+          // that screen (its Back button only exists once you own something), so trading a
+          // slightly busier bar there for a real dead end is the wrong side of that trade.
+          tabs={step === 'form' || step === 'status' ? [] : DESTINATIONS}
+          active={active}
+          onSelect={handleNavigate}
           actions={
             <>
               {/* The apply rail means nothing over a list of things you already own. */}

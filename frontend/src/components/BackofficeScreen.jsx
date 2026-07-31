@@ -10,6 +10,7 @@ import {
 import ApplicationsScreen from './ApplicationsScreen.jsx';
 import ServicesScreen from './ServicesScreen.jsx';
 import { api } from '../api.js';
+import { DESTINATIONS } from '../nav.js';
 
 // Applications move every ~3s (2s to decide + 1s between steps), so a 1s poll is
 // enough to make the board feel live without hammering the orchestrator.
@@ -26,7 +27,7 @@ const TABS = [
  * poll only run while the operator is actually looking at it — the customer journey
  * never does.
  */
-export default function BackofficeScreen({ onHome }) {
+export default function BackofficeScreen({ onNavigate }) {
   const [screen, setScreen] = useState('applications');
   const [health, setHealth] = useState(null);
   const [info, setInfo] = useState(null);
@@ -179,9 +180,13 @@ export default function BackofficeScreen({ onHome }) {
               >
                 {stepping ? `Stepping · ${demo?.parked ?? 0} held` : 'Stepping off'}
               </Button>
-              <Button variant="ghost" size="sm" onClick={onHome}>
-                ← Home
-              </Button>
+              {/* This screen's own tabs already switch Applications/Services, so the
+                  cross-page destinations live here instead of in a second tabs bar. */}
+              {DESTINATIONS.filter((d) => d.id !== 'backoffice').map((d) => (
+                <Button key={d.id} variant="ghost" size="sm" onClick={() => onNavigate(d.id)}>
+                  {d.label}
+                </Button>
+              ))}
             </>
           }
         />
