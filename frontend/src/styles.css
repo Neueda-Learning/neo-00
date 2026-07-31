@@ -43,7 +43,7 @@
 
 .landing__choices {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--ds-space-5);
 }
 
@@ -536,7 +536,6 @@ body {
 }
 
 .landing__head {
-  max-width: 900px;
   margin: 0 0 clamp(48px, 8vw, 96px);
   text-align: left;
 }
@@ -552,9 +551,12 @@ body {
 }
 
 .landing__title {
-  max-width: 10ch;
+  /* No character cap: "Enter the bank." is one line on a real screen, not the
+     two-line stack a narrow max-width used to force. The clamp still shrinks
+     it on anything narrow enough to need that (see the 760px override below). */
+  white-space: nowrap;
   color: var(--neo-white);
-  font-size: clamp(62px, 10vw, 132px);
+  font-size: clamp(62px, 7vw, 118px);
   font-weight: 600;
   letter-spacing: -0.07em;
   line-height: 0.88;
@@ -569,7 +571,7 @@ body {
 }
 
 .landing__choices {
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1px;
   background: var(--neo-line);
   border: 1px solid var(--neo-line);
@@ -1513,6 +1515,10 @@ body {
   }
 
   .landing__title {
+    /* The desktop rule forces one line; there's no room for that on a phone,
+       so restore the two-line stack the character cap used to give everywhere. */
+    white-space: normal;
+    max-width: 10ch;
     font-size: clamp(54px, 20vw, 86px);
   }
 
